@@ -25,7 +25,7 @@ dockers_v2:
     ids:
       - manager
     images:
-      - "ghcr.io/paperclipai/k8s-operator"
+      - "ghcr.io/openclaw-rocks/paperclip-operator"
     tags:
       - "{{ .Tag }}"
       - "{{ .Major }}.{{ .Minor }}"
@@ -70,5 +70,5 @@ release:
   draft: true
   replace_existing_artifacts: true
   github:
-    owner: paperclipai
-    name: k8s-operator
+    owner: openclaw-rocks
+    name: paperclip-operator

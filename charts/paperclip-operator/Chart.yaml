@@ -11,9 +11,9 @@ keywords:
   - agents
   - orchestration
   - operator
-home: https://github.com/paperclipai/k8s-operator
+home: https://github.com/openclaw-rocks/paperclip-operator
 sources:
-  - https://github.com/paperclipai/k8s-operator
+  - https://github.com/openclaw-rocks/paperclip-operator
 maintainers:
-  - name: paperclipai
-    url: https://github.com/paperclipai
+  - name: openclaw-rocks
+    url: https://github.com/openclaw-rocks

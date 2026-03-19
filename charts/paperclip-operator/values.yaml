@@ -3,7 +3,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/paperclipai/k8s-operator
+  repository: ghcr.io/openclaw-rocks/paperclip-operator
   pullPolicy: IfNotPresent
   tag: ""  # Defaults to appVersion
 

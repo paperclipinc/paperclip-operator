@@ -4,9 +4,9 @@
 
 Go-based Kubernetes operator for managing Paperclip instances (the open-source AI agent orchestration platform), built with controller-runtime (kubebuilder). CRD API group is `paperclip.ai`, version `v1alpha1`.
 
-- **Module:** `github.com/paperclipai/k8s-operator`
+- **Module:** `github.com/openclaw-rocks/paperclip-operator`
 - **Go version:** 1.24
-- **GitHub:** `paperclipai/k8s-operator` (GHCR org: `paperclipai`)
+- **GitHub:** `openclaw-rocks/paperclip-operator` (GHCR org: `openclaw-rocks`)
 
 ## Commands
 
@@ -190,7 +190,7 @@ Automated via release-please + GoReleaser:
 5. Cosign signs images, SBOM is generated and attested
 6. SBOM uploaded to draft release, then release is published (using PAT)
 7. Published release triggers `operatorhub.yaml`: auto-submits bundle PR to `k8s-operatorhub/community-operators`
-8. Helm chart is packaged and pushed to `oci://ghcr.io/paperclipai/charts`
+8. Helm chart is packaged and pushed to `oci://ghcr.io/openclaw-rocks/charts`
 
 **Key config files:**
 - `release-please-config.json` -- `skip-github-release: true` (GoReleaser manages the release lifecycle)
@@ -202,4 +202,4 @@ Automated via release-please + GoReleaser:
 
 **Manual trigger:** `gh workflow run "OperatorHub Submission" -f tag=vX.Y.Z`
 
-Image: `ghcr.io/paperclipai/k8s-operator`
+Image: `ghcr.io/openclaw-rocks/paperclip-operator`

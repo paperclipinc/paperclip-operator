@@ -15,7 +15,7 @@ If you discover a security vulnerability in the Paperclip Kubernetes Operator, p
 
 ### How to Report
 
-1. GitHub: Use [GitHub's private vulnerability reporting](https://github.com/paperclipai/k8s-operator/security/advisories/new)
+1. GitHub: Use [GitHub's private vulnerability reporting](https://github.com/openclaw-rocks/paperclip-operator/security/advisories/new)
 
 ### What to Include
 

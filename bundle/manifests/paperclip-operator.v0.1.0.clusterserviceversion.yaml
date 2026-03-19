@@ -33,12 +33,12 @@ metadata:
       ]
     capabilities: Full Lifecycle
     categories: AI/Machine Learning
-    containerImage: ghcr.io/paperclipai/k8s-operator:v0.1.0
+    containerImage: ghcr.io/openclaw-rocks/paperclip-operator:v0.1.0
     createdAt: "2026-03-19T00:00:00Z"
     description: Kubernetes operator for managing Paperclip instances - the open-source AI agent orchestration platform.
     operators.operatorframework.io/builder: operator-sdk-v1.42.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
-    repository: https://github.com/paperclipai/k8s-operator
+    repository: https://github.com/openclaw-rocks/paperclip-operator
     support: Paperclip AI
 spec:
   apiservicedefinitions: {}
@@ -53,7 +53,7 @@ spec:
     ## Paperclip Kubernetes Operator
 
     The Paperclip Operator automates the deployment and lifecycle management
-    of [Paperclip](https://github.com/paperclipai/paperclip) instances on
+    of [Paperclip](https://github.com/openclaw-rocks/paperclip) instances on
     Kubernetes. Paperclip is the open-source AI agent orchestration platform
     for zero-human companies.
 
@@ -237,7 +237,7 @@ spec:
                       - --metrics-bind-address=:8443
                       - --metrics-secure=true
                       - --leader-elect
-                    image: ghcr.io/paperclipai/k8s-operator:v0.1.0
+                    image: ghcr.io/openclaw-rocks/paperclip-operator:v0.1.0
                     livenessProbe:
                       httpGet:
                         path: /healthz
@@ -289,9 +289,9 @@ spec:
     - kubernetes
   links:
     - name: GitHub
-      url: https://github.com/paperclipai/k8s-operator
+      url: https://github.com/openclaw-rocks/paperclip-operator
     - name: Paperclip
-      url: https://github.com/paperclipai/paperclip
+      url: https://github.com/openclaw-rocks/paperclip
   maintainers:
     - email: jannes@openclaw.rocks
       name: Jannes Stubbemann
@@ -299,5 +299,5 @@ spec:
   minKubeVersion: 1.28.0
   provider:
     name: Paperclip AI
-    url: https://github.com/paperclipai
+    url: https://github.com/openclaw-rocks
   version: 0.1.0

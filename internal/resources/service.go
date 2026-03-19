@@ -1,7 +1,7 @@
 package resources
 
 import (
-	paperclipv1alpha1 "github.com/paperclipai/k8s-operator/api/v1alpha1"
+	paperclipv1alpha1 "github.com/openclaw-rocks/paperclip-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 

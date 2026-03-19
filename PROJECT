@@ -9,7 +9,7 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: paperclip-operator
-repo: github.com/paperclipai/k8s-operator
+repo: github.com/openclaw-rocks/paperclip-operator
 resources:
 - api:
     crdVersion: v1
@@ -18,6 +18,6 @@ resources:
   domain: paperclip.ai
   group: paperclip
   kind: PaperclipInstance
-  path: github.com/paperclipai/k8s-operator/api/v1alpha1
+  path: github.com/openclaw-rocks/paperclip-operator/api/v1alpha1
   version: v1alpha1
 version: "3"

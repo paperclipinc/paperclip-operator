@@ -27,7 +27,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	paperclipv1alpha1 "github.com/paperclipai/k8s-operator/api/v1alpha1"
+	paperclipv1alpha1 "github.com/openclaw-rocks/paperclip-operator/api/v1alpha1"
 )
 
 var _ = Describe("PaperclipInstance Controller", func() {

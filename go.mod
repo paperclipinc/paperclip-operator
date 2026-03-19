@@ -1,4 +1,4 @@
-module github.com/paperclipai/k8s-operator
+module github.com/openclaw-rocks/paperclip-operator
 
 go 1.24.0
 

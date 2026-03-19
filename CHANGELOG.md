@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.0](https://github.com/paperclipai/k8s-operator/releases/tag/v0.1.0) (2026-03-19)
+## [0.1.0](https://github.com/openclaw-rocks/paperclip-operator/releases/tag/v0.1.0) (2026-03-19)
 
 ### Features
 

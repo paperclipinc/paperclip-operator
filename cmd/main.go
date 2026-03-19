@@ -37,8 +37,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	paperclipv1alpha1 "github.com/paperclipai/k8s-operator/api/v1alpha1"
-	"github.com/paperclipai/k8s-operator/internal/controller"
+	paperclipv1alpha1 "github.com/openclaw-rocks/paperclip-operator/api/v1alpha1"
+	"github.com/openclaw-rocks/paperclip-operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
 
