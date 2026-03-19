@@ -1,10 +1,11 @@
 package resources
 
 import (
-	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
 )
 
 // BuildPodDisruptionBudget constructs the PDB for a Instance.

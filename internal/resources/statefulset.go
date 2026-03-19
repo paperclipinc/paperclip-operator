@@ -3,11 +3,12 @@ package resources
 import (
 	"fmt"
 
-	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
 )
 
 // BuildStatefulSet constructs the Paperclip server StatefulSet.
@@ -79,8 +80,8 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance) *appsv1.StatefulSet 
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: ObjectMeta(instance, StatefulSetName(instance)),
 		Spec: appsv1.StatefulSetSpec{
-			Replicas:            &replicas,
-			ServiceName:         ServiceName(instance),
+			Replicas:             &replicas,
+			ServiceName:          ServiceName(instance),
 			RevisionHistoryLimit: Ptr(int32(10)),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: selectorLabels,
@@ -201,7 +202,7 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 				},
 			},
 		})
-	// "embedded" mode uses PGlite - no DATABASE_URL needed
+		// "embedded" mode uses PGlite - no DATABASE_URL needed
 	}
 
 	// Auth secret

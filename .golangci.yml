@@ -17,7 +17,6 @@ linters:
     - gocyclo
     - goprintffuncname
     - gosec
-    - gosimple
     - govet
     - ineffassign
     - misspell
@@ -27,7 +26,6 @@ linters:
     - prealloc
     - revive
     - staticcheck
-    - stylecheck
     - unconvert
     - unparam
     - unused
@@ -61,6 +59,7 @@ linters:
           - dupl
           - goconst
           - gosec
+          - gocritic
           - lll
         path: _test\.go
       - text: "SA5011"
@@ -68,23 +67,31 @@ linters:
           - staticcheck
         path: _test\.go
       - linters:
+          - gocritic
+          - lll
+        path: cmd/
+      - linters:
           - lll
         path: api/*
       - linters:
           - dupl
           - lll
+          - gocritic
         path: internal/*
     paths:
       - third_party$
       - builtin$
       - examples$
+      - test/
+      - cmd/
 formatters:
   enable:
     - gofmt
     - goimports
   settings:
     goimports:
-      local-prefixes: github.com/stubbi/paperclip-operator
+      local-prefixes:
+        - github.com/stubbi/paperclip-operator
   exclusions:
     generated: lax
     paths:

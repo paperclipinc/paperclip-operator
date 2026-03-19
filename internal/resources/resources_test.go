@@ -3,12 +3,14 @@ package resources
 import (
 	"testing"
 
-	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
 )
 
+//nolint:unparam // test helper kept flexible for future test cases
 func newTestInstance(name string) *paperclipv1alpha1.Instance {
 	return &paperclipv1alpha1.Instance{
 		ObjectMeta: metav1.ObjectMeta{

@@ -79,6 +79,8 @@ type InstanceReconciler struct {
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile moves the cluster state toward the desired state defined by the Instance CR.
+//
+//nolint:gocyclo // reconciliation loop is inherently complex
 func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	start := time.Now()
@@ -574,10 +576,11 @@ func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *papercl
 	return r.Status().Update(ctx, instance)
 }
 
-func (r *InstanceReconciler) setPhase(ctx context.Context, instance *paperclipv1alpha1.Instance, phase paperclipv1alpha1.InstancePhase) {
+func (r *InstanceReconciler) setPhase(_ context.Context, instance *paperclipv1alpha1.Instance, phase paperclipv1alpha1.InstancePhase) {
 	instance.Status.Phase = phase
 }
 
+//nolint:unparam // return signature matches controller-runtime convention
 func (r *InstanceReconciler) handleError(ctx context.Context, instance *paperclipv1alpha1.Instance, resource string, err error) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.Error(err, "Failed to reconcile resource", "resource", resource)

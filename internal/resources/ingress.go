@@ -1,8 +1,9 @@
 package resources
 
 import (
-	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
 	networkingv1 "k8s.io/api/networking/v1"
+
+	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
 )
 
 // BuildIngress constructs the Ingress for a Instance.
@@ -15,7 +16,7 @@ func BuildIngress(instance *paperclipv1alpha1.Instance) *networkingv1.Ingress {
 	port := servicePort(instance)
 	pathType := networkingv1.PathTypePrefix
 
-	var rules []networkingv1.IngressRule
+	rules := make([]networkingv1.IngressRule, 0, len(ing.Hosts))
 	for _, host := range ing.Hosts {
 		rules = append(rules, networkingv1.IngressRule{
 			Host: host,
@@ -40,7 +41,7 @@ func BuildIngress(instance *paperclipv1alpha1.Instance) *networkingv1.Ingress {
 		})
 	}
 
-	var tls []networkingv1.IngressTLS
+	tls := make([]networkingv1.IngressTLS, 0, len(ing.TLS))
 	for _, t := range ing.TLS {
 		tls = append(tls, networkingv1.IngressTLS{
 			Hosts:      t.Hosts,
