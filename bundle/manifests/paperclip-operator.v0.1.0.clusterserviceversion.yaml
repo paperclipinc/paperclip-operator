@@ -36,6 +36,7 @@ metadata:
     containerImage: ghcr.io/stubbi/paperclip-operator:v0.1.0
     createdAt: "2026-03-19T00:00:00Z"
     description: Kubernetes operator for managing Paperclip instances - the open-source AI agent orchestration platform.
+    olm.properties: '[{"type":"olm.gvk","value":{"group":"autoscaling","version":"v2","kind":"HorizontalPodAutoscaler"}},{"type":"olm.gvk","value":{"group":"policy","version":"v1","kind":"PodDisruptionBudget"}}]'
     operators.operatorframework.io/builder: operator-sdk-v1.42.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/stubbi/paperclip-operator
