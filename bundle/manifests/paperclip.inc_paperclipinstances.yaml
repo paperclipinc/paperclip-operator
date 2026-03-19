@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: paperclipinstances.paperclip.paperclip.ai
+  name: paperclipinstances.paperclip.inc
 spec:
-  group: paperclip.paperclip.ai
+  group: paperclip.inc
   names:
     kind: PaperclipInstance
     listKind: PaperclipInstanceList

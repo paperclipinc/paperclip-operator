@@ -1,6 +1,6 @@
 # Paperclip Kubernetes Operator
 
-A Kubernetes operator for deploying and managing [Paperclip](https://github.com/openclaw-rocks/paperclip) instances -- the open-source AI agent orchestration platform.
+A Kubernetes operator for deploying and managing [Paperclip](https://github.com/paperclipai/paperclip) instances -- the open-source AI agent orchestration platform.
 
 ## Overview
 
@@ -28,7 +28,7 @@ kubectl apply -f https://github.com/stubbi/paperclip-operator/releases/latest/do
 ### Create a Paperclip instance
 
 ```yaml
-apiVersion: paperclip.paperclip.ai/v1alpha1
+apiVersion: paperclip.inc/v1alpha1
 kind: PaperclipInstance
 metadata:
   name: my-paperclip

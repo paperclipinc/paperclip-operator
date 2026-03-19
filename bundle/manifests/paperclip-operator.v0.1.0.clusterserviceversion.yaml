@@ -7,7 +7,7 @@ metadata:
     alm-examples: |-
       [
         {
-          "apiVersion": "paperclip.paperclip.ai/v1alpha1",
+          "apiVersion": "paperclip.inc/v1alpha1",
           "kind": "PaperclipInstance",
           "metadata": {
             "name": "my-paperclip"
@@ -47,13 +47,13 @@ spec:
       - description: PaperclipInstance is the Schema for the paperclipinstances API.
         displayName: Paperclip Instance
         kind: PaperclipInstance
-        name: paperclipinstances.paperclip.paperclip.ai
+        name: paperclipinstances.paperclip.inc
         version: v1alpha1
   description: |
     ## Paperclip Kubernetes Operator
 
     The Paperclip Operator automates the deployment and lifecycle management
-    of [Paperclip](https://github.com/openclaw-rocks/paperclip) instances on
+    of [Paperclip](https://github.com/paperclipai/paperclip) instances on
     Kubernetes. Paperclip is the open-source AI agent orchestration platform
     for zero-human companies.
 
@@ -75,7 +75,7 @@ spec:
     Create a PaperclipInstance custom resource to deploy Paperclip:
 
     ```yaml
-    apiVersion: paperclip.paperclip.ai/v1alpha1
+    apiVersion: paperclip.inc/v1alpha1
     kind: PaperclipInstance
     metadata:
       name: my-paperclip
@@ -100,7 +100,7 @@ spec:
       clusterPermissions:
         - rules:
             - apiGroups:
-                - paperclip.paperclip.ai
+                - paperclip.inc
               resources:
                 - paperclipinstances
               verbs:
@@ -112,7 +112,7 @@ spec:
                 - patch
                 - delete
             - apiGroups:
-                - paperclip.paperclip.ai
+                - paperclip.inc
               resources:
                 - paperclipinstances/status
               verbs:
@@ -120,7 +120,7 @@ spec:
                 - update
                 - patch
             - apiGroups:
-                - paperclip.paperclip.ai
+                - paperclip.inc
               resources:
                 - paperclipinstances/finalizers
               verbs:
@@ -291,7 +291,7 @@ spec:
     - name: GitHub
       url: https://github.com/stubbi/paperclip-operator
     - name: Paperclip
-      url: https://github.com/openclaw-rocks/paperclip
+      url: https://github.com/paperclipai/paperclip
   maintainers:
     - email: jannes@openclaw.rocks
       name: Jannes Stubbemann

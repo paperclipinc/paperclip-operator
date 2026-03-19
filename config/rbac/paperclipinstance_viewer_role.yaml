@@ -1,7 +1,7 @@
 # This rule is not used by the project paperclip-operator itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants read-only access to paperclip.paperclip.ai resources.
+# Grants read-only access to paperclip.inc resources.
 # This role is intended for users who need visibility into these resources
 # without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
 
@@ -14,7 +14,7 @@ metadata:
   name: paperclipinstance-viewer-role
 rules:
 - apiGroups:
-  - paperclip.paperclip.ai
+  - paperclip.inc
   resources:
   - paperclipinstances
   verbs:
@@ -22,7 +22,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - paperclip.paperclip.ai
+  - paperclip.inc
   resources:
   - paperclipinstances/status
   verbs:

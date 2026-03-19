@@ -1,4 +1,4 @@
-apiVersion: paperclip.paperclip.ai/v1alpha1
+apiVersion: paperclip.inc/v1alpha1
 kind: PaperclipInstance
 metadata:
   name: my-paperclip

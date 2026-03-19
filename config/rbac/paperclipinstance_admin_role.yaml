@@ -1,7 +1,7 @@
 # This rule is not used by the project paperclip-operator itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants full permissions ('*') over paperclip.paperclip.ai.
+# Grants full permissions ('*') over paperclip.inc.
 # This role is intended for users authorized to modify roles and bindings within the cluster,
 # enabling them to delegate specific permissions to other users or groups as needed.
 
@@ -14,13 +14,13 @@ metadata:
   name: paperclipinstance-admin-role
 rules:
 - apiGroups:
-  - paperclip.paperclip.ai
+  - paperclip.inc
   resources:
   - paperclipinstances
   verbs:
   - '*'
 - apiGroups:
-  - paperclip.paperclip.ai
+  - paperclip.inc
   resources:
   - paperclipinstances/status
   verbs:

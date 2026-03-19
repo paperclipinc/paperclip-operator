@@ -45,8 +45,8 @@ jobs:
             > "${BUNDLE_DIR}/manifests/paperclip-operator.v${VERSION}.clusterserviceversion.yaml"
 
           # Copy CRD and metadata as-is
-          cp bundle/manifests/paperclip.paperclip.ai_paperclipinstances.yaml "${BUNDLE_DIR}/manifests/" 2>/dev/null || \
-            cp config/crd/bases/paperclip.paperclip.ai_paperclipinstances.yaml "${BUNDLE_DIR}/manifests/"
+          cp bundle/manifests/paperclip.inc_paperclipinstances.yaml "${BUNDLE_DIR}/manifests/" 2>/dev/null || \
+            cp config/crd/bases/paperclip.inc_paperclipinstances.yaml "${BUNDLE_DIR}/manifests/"
           cp bundle/metadata/annotations.yaml "${BUNDLE_DIR}/metadata/"
 
           echo "Bundle prepared at ${BUNDLE_DIR}:"

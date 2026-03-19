@@ -83,7 +83,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - paperclip.paperclip.ai
+  - paperclip.inc
   resources:
   - paperclipinstances
   verbs:
@@ -95,13 +95,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - paperclip.paperclip.ai
+  - paperclip.inc
   resources:
   - paperclipinstances/finalizers
   verbs:
   - update
 - apiGroups:
-  - paperclip.paperclip.ai
+  - paperclip.inc
   resources:
   - paperclipinstances/status
   verbs:

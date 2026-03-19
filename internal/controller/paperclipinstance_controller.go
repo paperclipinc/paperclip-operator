@@ -62,9 +62,9 @@ type PaperclipInstanceReconciler struct {
 	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=paperclip.paperclip.ai,resources=paperclipinstances,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=paperclip.paperclip.ai,resources=paperclipinstances/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=paperclip.paperclip.ai,resources=paperclipinstances/finalizers,verbs=update
+// +kubebuilder:rbac:groups=paperclip.inc,resources=paperclipinstances,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=paperclip.inc,resources=paperclipinstances/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=paperclip.inc,resources=paperclipinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
