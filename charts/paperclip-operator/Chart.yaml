@@ -1,10 +1,12 @@
 apiVersion: v2
 name: paperclip-operator
-description: Kubernetes operator for managing Paperclip instances - the open-source AI agent orchestration platform
+description: >-
+  Kubernetes operator for managing Paperclip instances - the open-source AI
+  agent orchestration platform
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
-kubeVersion: ">=1.28.0"
+version: 0.2.0
+appVersion: 0.2.0
+kubeVersion: '>=1.28.0'
 keywords:
   - paperclip
   - ai
