@@ -95,9 +95,12 @@ func TestBuildStatefulSet(t *testing.T) {
 		t.Error("expected startup probe")
 	}
 
-	// Verify health check path
-	if container.LivenessProbe.HTTPGet.Path != HealthPath {
-		t.Errorf("expected liveness probe path %q, got %q", HealthPath, container.LivenessProbe.HTTPGet.Path)
+	// Verify probe type: authenticated mode should use TCP probes
+	if container.LivenessProbe.TCPSocket == nil {
+		t.Error("expected TCP liveness probe for authenticated mode")
+	}
+	if container.ReadinessProbe.TCPSocket == nil {
+		t.Error("expected TCP readiness probe for authenticated mode")
 	}
 
 	// Verify volume mounts

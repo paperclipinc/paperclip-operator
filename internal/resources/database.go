@@ -49,8 +49,16 @@ func BuildDatabaseStatefulSet(instance *paperclipv1alpha1.Instance) *appsv1.Stat
 				},
 			},
 			{Name: "PGDATA", Value: DatabaseMountPath + "/pgdata"},
+			{Name: "POSTGRES_INITDB_ARGS", Value: "--data-checksums"},
 		},
-		Resources:                instance.Spec.Database.Managed.Resources,
+		Resources:                databaseResources(instance),
+		Lifecycle: &corev1.Lifecycle{
+			PreStop: &corev1.LifecycleHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"/bin/sh", "-c", "pg_ctl stop -m fast -D $PGDATA"},
+				},
+			},
+		},
 		ImagePullPolicy:          corev1.PullIfNotPresent,
 		TerminationMessagePath:   "/dev/termination-log",
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
@@ -142,6 +150,23 @@ func BuildDatabaseStatefulSet(instance *paperclipv1alpha1.Instance) *appsv1.Stat
 	sts.Labels = labels
 
 	return sts
+}
+
+func databaseResources(instance *paperclipv1alpha1.Instance) corev1.ResourceRequirements {
+	r := instance.Spec.Database.Managed.Resources
+	if len(r.Requests) == 0 && len(r.Limits) == 0 {
+		return corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("250m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		}
+	}
+	return r
 }
 
 // BuildDatabaseSecret constructs the auto-generated database credentials Secret.

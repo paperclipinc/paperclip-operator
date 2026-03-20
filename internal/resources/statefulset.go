@@ -16,7 +16,7 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance) *appsv1.StatefulSet 
 	labels := LabelsWithComponent(instance, "server")
 	selectorLabels := SelectorLabels(instance)
 
-	replicas := int32(1)
+	replicas := EffectiveReplicas(instance)
 
 	container := buildMainContainer(instance)
 	volumes := buildVolumes(instance)
@@ -136,6 +136,15 @@ func buildMainContainer(instance *paperclipv1alpha1.Instance) corev1.Container {
 		}
 	}
 
+	// Multi-replica heartbeat gating: only pod-0 runs the scheduler.
+	// Uses a shell wrapper that checks the StatefulSet ordinal in $HOSTNAME.
+	if instance.Spec.Heartbeat.Enabled && EffectiveReplicas(instance) > 1 {
+		container.Command = []string{"/bin/sh", "-c"}
+		container.Args = []string{
+			`case "$HOSTNAME" in *-0) export HEARTBEAT_SCHEDULER_ENABLED=true ;; *) export HEARTBEAT_SCHEDULER_ENABLED=false ;; esac; exec ` + DefaultPaperclipEntrypoint,
+		}
+	}
+
 	// Probes
 	container.LivenessProbe = buildLivenessProbe(instance, port)
 	container.ReadinessProbe = buildReadinessProbe(instance, port)
@@ -231,6 +240,9 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 	}
 
 	// Heartbeat scheduler
+	// When heartbeat is disabled, explicitly disable it on all pods.
+	// When enabled with multiple replicas, the command wrapper handles per-pod gating
+	// (only pod-0 runs the scheduler), so we skip the static env var here.
 	if !instance.Spec.Heartbeat.Enabled {
 		vars = append(vars, corev1.EnvVar{Name: "HEARTBEAT_SCHEDULER_ENABLED", Value: "false"})
 	}
@@ -349,15 +361,26 @@ func buildVolumeMounts(instance *paperclipv1alpha1.Instance) []corev1.VolumeMoun
 	return mounts
 }
 
+func probeHandler(instance *paperclipv1alpha1.Instance, port int32) corev1.ProbeHandler {
+	if UseTCPProbes(instance) {
+		return corev1.ProbeHandler{
+			TCPSocket: &corev1.TCPSocketAction{
+				Port: intstr.FromInt32(port),
+			},
+		}
+	}
+	return corev1.ProbeHandler{
+		HTTPGet: &corev1.HTTPGetAction{
+			Path:   HealthPath,
+			Port:   intstr.FromInt32(port),
+			Scheme: corev1.URISchemeHTTP,
+		},
+	}
+}
+
 func buildLivenessProbe(instance *paperclipv1alpha1.Instance, port int32) *corev1.Probe {
 	probe := &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path:   HealthPath,
-				Port:   intstr.FromInt32(port),
-				Scheme: corev1.URISchemeHTTP,
-			},
-		},
+		ProbeHandler:        probeHandler(instance, port),
 		InitialDelaySeconds: 15,
 		PeriodSeconds:       20,
 		TimeoutSeconds:      5,
@@ -388,13 +411,7 @@ func buildLivenessProbe(instance *paperclipv1alpha1.Instance, port int32) *corev
 
 func buildReadinessProbe(instance *paperclipv1alpha1.Instance, port int32) *corev1.Probe {
 	probe := &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path:   HealthPath,
-				Port:   intstr.FromInt32(port),
-				Scheme: corev1.URISchemeHTTP,
-			},
-		},
+		ProbeHandler:        probeHandler(instance, port),
 		InitialDelaySeconds: 5,
 		PeriodSeconds:       10,
 		TimeoutSeconds:      3,
@@ -425,13 +442,7 @@ func buildReadinessProbe(instance *paperclipv1alpha1.Instance, port int32) *core
 
 func buildStartupProbe(instance *paperclipv1alpha1.Instance, port int32) *corev1.Probe {
 	probe := &corev1.Probe{
-		ProbeHandler: corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
-				Path:   HealthPath,
-				Port:   intstr.FromInt32(port),
-				Scheme: corev1.URISchemeHTTP,
-			},
-		},
+		ProbeHandler:        probeHandler(instance, port),
 		InitialDelaySeconds: 0,
 		PeriodSeconds:       5,
 		TimeoutSeconds:      3,

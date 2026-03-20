@@ -177,6 +177,9 @@ type DeploymentSpec struct {
 }
 
 // DatabaseSpec configures PostgreSQL.
+// For high-availability production deployments, use mode "external" with a managed
+// PostgreSQL service (e.g., Amazon RDS, Cloud SQL). The "managed" mode provides a
+// single-instance PostgreSQL suitable for development and small deployments.
 type DatabaseSpec struct {
 	// Mode selects the database mode: "embedded" (PGlite), "external" (connection string), or "managed" (operator-managed StatefulSet).
 	// +kubebuilder:default="managed"
@@ -474,6 +477,13 @@ type LoggingSpec struct {
 
 // AvailabilitySpec configures scaling and pod scheduling.
 type AvailabilitySpec struct {
+	// Replicas is the desired number of Paperclip server pods.
+	// Ignored when autoScaling is enabled (the HPA manages replicas).
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Replicas *int32 `json:"replicas,omitempty"`
+
 	// PodDisruptionBudget configures the PDB.
 	// +optional
 	PodDisruptionBudget *PDBSpec `json:"podDisruptionBudget,omitempty"`
@@ -540,6 +550,14 @@ type AutoScalingSpec struct {
 
 // ProbesSpec configures health probes.
 type ProbesSpec struct {
+	// Type specifies the probe mechanism: "auto" (default), "http", or "tcp".
+	// "auto" uses HTTP probes in open mode and TCP probes in authenticated/single-tenant mode
+	// (where /api/health returns 403 without credentials).
+	// +kubebuilder:default="auto"
+	// +kubebuilder:validation:Enum=auto;http;tcp
+	// +optional
+	Type string `json:"type,omitempty"`
+
 	// Liveness configures the liveness probe against /api/health.
 	// +optional
 	Liveness *ProbeSpec `json:"liveness,omitempty"`

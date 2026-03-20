@@ -42,11 +42,38 @@ const (
 
 	// HealthPath is the HTTP health check path.
 	HealthPath = "/api/health"
+
+	// DefaultPaperclipEntrypoint is the default Paperclip container entrypoint.
+	// Used when the operator needs to inject a shell wrapper (e.g., heartbeat leader election).
+	DefaultPaperclipEntrypoint = `node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/index.js`
 )
 
 // Ptr returns a pointer to the given value.
 func Ptr[T any](v T) *T {
 	return &v
+}
+
+// EffectiveReplicas returns the configured replica count, defaulting to 1.
+func EffectiveReplicas(instance *paperclipv1alpha1.Instance) int32 {
+	if instance.Spec.Availability.Replicas != nil {
+		return *instance.Spec.Availability.Replicas
+	}
+	return 1
+}
+
+// UseTCPProbes returns true when probes should use TCP instead of HTTP.
+// This is needed in authenticated/single-tenant mode where /api/health returns 403.
+func UseTCPProbes(instance *paperclipv1alpha1.Instance) bool {
+	probeType := instance.Spec.Probes.Type
+	if probeType == "tcp" {
+		return true
+	}
+	if probeType == "http" {
+		return false
+	}
+	// "auto" or empty: use TCP for authenticated/single-tenant modes
+	mode := instance.Spec.Deployment.Mode
+	return mode == "authenticated" || mode == "single-tenant"
 }
 
 // Labels returns the standard labels for a Instance resource.

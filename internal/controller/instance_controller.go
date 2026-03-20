@@ -372,6 +372,11 @@ func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance 
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 		obj.Labels = desired.Labels
+		// When HPA is enabled, preserve the current replica count to avoid
+		// fighting the autoscaler on every reconcile.
+		if as := instance.Spec.Availability.AutoScaling; as != nil && as.Enabled && obj.Spec.Replicas != nil {
+			desired.Spec.Replicas = obj.Spec.Replicas
+		}
 		obj.Spec = desired.Spec
 		return controllerutil.SetControllerReference(instance, obj, r.Scheme)
 	})

@@ -1083,6 +1083,14 @@ spec:
                     required:
                     - enabled
                     type: object
+                  replicas:
+                    default: 1
+                    description: |-
+                      Replicas is the desired number of Paperclip server pods.
+                      Ignored when autoScaling is enabled (the HPA manages replicas).
+                    format: int32
+                    minimum: 1
+                    type: integer
                   tolerations:
                     description: Tolerations specifies pod tolerations.
                     items:
@@ -5271,6 +5279,17 @@ spec:
                         format: int32
                         type: integer
                     type: object
+                  type:
+                    default: auto
+                    description: |-
+                      Type specifies the probe mechanism: "auto" (default), "http", or "tcp".
+                      "auto" uses HTTP probes in open mode and TCP probes in authenticated/single-tenant mode
+                      (where /api/health returns 403 without credentials).
+                    enum:
+                    - auto
+                    - http
+                    - tcp
+                    type: string
                 type: object
               resources:
                 description: Resources specifies the compute resources for the Paperclip
