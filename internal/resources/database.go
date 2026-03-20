@@ -113,6 +113,8 @@ func BuildDatabaseStatefulSet(instance *paperclipv1alpha1.Instance) *appsv1.Stat
 					DNSPolicy:                     corev1.DNSClusterFirst,
 					SchedulerName:                 "default-scheduler",
 					TerminationGracePeriodSeconds: Ptr(int64(30)),
+					NodeSelector:                  instance.Spec.Availability.NodeSelector,
+					Tolerations:                   instance.Spec.Availability.Tolerations,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: Ptr(true),
 						RunAsUser:    Ptr(int64(70)),
