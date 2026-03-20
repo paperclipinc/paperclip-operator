@@ -477,27 +477,23 @@ func buildStartupProbe(instance *paperclipv1alpha1.Instance, port int32) *corev1
 
 func buildOnboardInitContainer(instance *paperclipv1alpha1.Instance) corev1.Container {
 	image := containerImage(instance)
-	baseURL := ""
-	if instance.Spec.Deployment.PublicURL != "" {
-		baseURL = instance.Spec.Deployment.PublicURL
-	}
 
-	// Script: run onboard if no config exists, then bootstrap admin if no admin exists.
-	// Both commands are idempotent (onboard skips if config exists, bootstrap skips if admin exists).
+	// Create the Paperclip config file if it doesn't exist yet.
+	// Uses `onboard --yes` which accepts quickstart defaults without starting the server.
+	// The `--run` flag is NOT used, so onboard only creates config and exits.
+	// Admin bootstrap (bootstrap-ceo) requires the server to be running for DB migrations,
+	// so it is handled by a postStart lifecycle hook on the main container instead.
 	script := `
 set -e
 CONFIG="/paperclip/instances/default/config.json"
-if [ ! -f "$CONFIG" ]; then
-  echo "Running initial onboarding..."
-  pnpm paperclipai onboard --yes
+if [ -f "$CONFIG" ]; then
+  echo "Config already exists, skipping onboard."
+  exit 0
 fi
-echo "Ensuring admin user is bootstrapped..."
+echo "Running initial onboarding..."
+pnpm paperclipai onboard --yes --config "$CONFIG"
+echo "Onboarding complete."
 `
-	if baseURL != "" {
-		script += fmt.Sprintf(`pnpm paperclipai auth bootstrap-ceo --base-url %q 2>&1 || true`, baseURL)
-	} else {
-		script += `pnpm paperclipai auth bootstrap-ceo 2>&1 || true`
-	}
 
 	return corev1.Container{
 		Name:            "onboard",
