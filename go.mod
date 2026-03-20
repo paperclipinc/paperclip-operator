@@ -1,4 +1,4 @@
-module github.com/stubbi/paperclip-operator
+module github.com/paperclipinc/paperclip-operator
 
 go 1.24.0
 

@@ -3,7 +3,7 @@ package resources
 import (
 	corev1 "k8s.io/api/core/v1"
 
-	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
+	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
 )
 
 // BuildServiceAccount constructs the ServiceAccount for a Instance.

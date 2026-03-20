@@ -3562,7 +3562,7 @@ spec:
                       x-kubernetes-map-type: atomic
                     type: array
                   repository:
-                    default: ghcr.io/paperclipai/paperclip
+                    default: ghcr.io/paperclipinc/paperclip
                     description: Repository is the container image repository.
                     type: string
                   tag:

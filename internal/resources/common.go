@@ -3,7 +3,7 @@ package resources
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
+	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
 )
 
 const (
@@ -66,10 +66,12 @@ func LabelsWithComponent(instance *paperclipv1alpha1.Instance, component string)
 }
 
 // SelectorLabels returns the minimal labels used for pod selectors.
+// Includes component=server to distinguish from database pods.
 func SelectorLabels(instance *paperclipv1alpha1.Instance) map[string]string {
 	return map[string]string{
-		LabelApp:      AppName,
-		LabelInstance: instance.Name,
+		LabelApp:       AppName,
+		LabelInstance:  instance.Name,
+		LabelComponent: "server",
 	}
 }
 

@@ -3,7 +3,7 @@ package resources
 import (
 	networkingv1 "k8s.io/api/networking/v1"
 
-	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
+	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
 )
 
 // BuildIngress constructs the Ingress for a Instance.

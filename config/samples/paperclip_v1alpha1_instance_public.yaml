@@ -5,7 +5,7 @@ metadata:
   namespace: paperclip
 spec:
   image:
-    repository: ghcr.io/paperclipai/paperclip
+    repository: ghcr.io/paperclipinc/paperclip
     tag: latest
 
   deployment:

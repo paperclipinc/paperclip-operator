@@ -128,7 +128,7 @@ type InstanceSpec struct {
 // ImageSpec configures the container image.
 type ImageSpec struct {
 	// Repository is the container image repository.
-	// +kubebuilder:default="ghcr.io/paperclipai/paperclip"
+	// +kubebuilder:default="ghcr.io/paperclipinc/paperclip"
 	// +optional
 	Repository string `json:"repository,omitempty"`
 

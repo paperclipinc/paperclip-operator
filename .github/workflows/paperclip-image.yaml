@@ -1,0 +1,108 @@
+name: Paperclip Image
+
+on:
+  # Poll upstream for new releases (runs daily)
+  schedule:
+    - cron: '0 6 * * *'
+
+  # Manual trigger with optional version override
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Upstream version to build (e.g. v2026.318.0). Leave empty to build latest release.'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  UPSTREAM_REPO: paperclipai/paperclip
+  IMAGE_NAME: paperclip
+
+jobs:
+  check:
+    name: Check for new release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      should_build: ${{ steps.resolve.outputs.should_build }}
+    steps:
+      - name: Resolve version to build
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION=$(gh api repos/${{ env.UPSTREAM_REPO }}/releases/latest --jq '.tag_name')
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          # Check if this version is already published
+          if docker buildx imagetools inspect ${{ env.REGISTRY }}/${OWNER}/${{ env.IMAGE_NAME }}:${VERSION} >/dev/null 2>&1; then
+            echo "Image ${{ env.REGISTRY }}/${OWNER}/${{ env.IMAGE_NAME }}:${VERSION} already exists, skipping"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.resolve.outputs.should_build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR (for imagetools inspect)
+        if: steps.resolve.outputs.should_build == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    name: Build & Push
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout upstream
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ needs.check.outputs.version }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.check.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ env.UPSTREAM_REPO }}
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+            org.opencontainers.image.description=Paperclip - AI agent orchestration platform
+          cache-from: type=gha,scope=paperclip-image
+          cache-to: type=gha,mode=max,scope=paperclip-image

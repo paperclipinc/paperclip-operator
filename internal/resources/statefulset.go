@@ -8,12 +8,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	paperclipv1alpha1 "github.com/stubbi/paperclip-operator/api/v1alpha1"
+	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
 )
 
 // BuildStatefulSet constructs the Paperclip server StatefulSet.
 func BuildStatefulSet(instance *paperclipv1alpha1.Instance) *appsv1.StatefulSet {
-	labels := Labels(instance)
+	labels := LabelsWithComponent(instance, "server")
 	selectorLabels := SelectorLabels(instance)
 
 	replicas := int32(1)
@@ -462,7 +462,7 @@ func buildStartupProbe(instance *paperclipv1alpha1.Instance, port int32) *corev1
 func containerImage(instance *paperclipv1alpha1.Instance) string {
 	repo := instance.Spec.Image.Repository
 	if repo == "" {
-		repo = "ghcr.io/paperclipai/paperclip"
+		repo = "ghcr.io/paperclipinc/paperclip"
 	}
 
 	if instance.Spec.Image.Digest != "" {

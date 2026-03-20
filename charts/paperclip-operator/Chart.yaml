@@ -11,9 +11,9 @@ keywords:
   - agents
   - orchestration
   - operator
-home: https://github.com/stubbi/paperclip-operator
+home: https://github.com/paperclipinc/paperclip-operator
 sources:
-  - https://github.com/stubbi/paperclip-operator
+  - https://github.com/paperclipinc/paperclip-operator
 maintainers:
-  - name: stubbi
-    url: https://github.com/stubbi
+  - name: paperclipinc
+    url: https://github.com/paperclipinc

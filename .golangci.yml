@@ -91,7 +91,7 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/stubbi/paperclip-operator
+        - github.com/paperclipinc/paperclip-operator
   exclusions:
     generated: lax
     paths:

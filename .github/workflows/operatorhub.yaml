@@ -38,7 +38,7 @@ jobs:
           # Copy and version the CSV
           sed \
             -e "s/paperclip-operator\.v[0-9]\+\.[0-9]\+\.[0-9]\+/paperclip-operator.v${VERSION}/g" \
-            -e "s|ghcr.io/stubbi/paperclip-operator:v[0-9]\+\.[0-9]\+\.[0-9]\+|ghcr.io/stubbi/paperclip-operator:${TAG}|g" \
+            -e "s|ghcr.io/paperclipinc/paperclip-operator:v[0-9]\+\.[0-9]\+\.[0-9]\+|ghcr.io/paperclipinc/paperclip-operator:${TAG}|g" \
             -e "s/createdAt: .*/createdAt: \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"/" \
             -e "s/^  version: [0-9]\+\.[0-9]\+\.[0-9]\+/  version: ${VERSION}/" \
             bundle/manifests/paperclip-operator.v*.clusterserviceversion.yaml \
@@ -95,14 +95,14 @@ jobs:
           ### Update to paperclip-operator
 
           **Version:** ${VERSION}
-          **Operator:** [Paperclip Kubernetes Operator](https://github.com/stubbi/paperclip-operator)
+          **Operator:** [Paperclip Kubernetes Operator](https://github.com/paperclipinc/paperclip-operator)
 
           #### Changes
-          See [release notes](https://github.com/stubbi/paperclip-operator/releases/tag/v${VERSION}).
+          See [release notes](https://github.com/paperclipinc/paperclip-operator/releases/tag/v${VERSION}).
 
           #### Testing
           - CI tests pass on the source repository
-          - Container image is published and signed at \`ghcr.io/stubbi/paperclip-operator:v${VERSION}\`
+          - Container image is published and signed at \`ghcr.io/paperclipinc/paperclip-operator:v${VERSION}\`
           EOF
           )"
           else

@@ -9,7 +9,7 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: paperclip-operator
-repo: github.com/stubbi/paperclip-operator
+repo: github.com/paperclipinc/paperclip-operator
 resources:
 - api:
     crdVersion: v1
@@ -18,6 +18,6 @@ resources:
   domain: inc
   group: paperclip
   kind: Instance
-  path: github.com/stubbi/paperclip-operator/api/v1alpha1
+  path: github.com/paperclipinc/paperclip-operator/api/v1alpha1
   version: v1alpha1
 version: "3"
