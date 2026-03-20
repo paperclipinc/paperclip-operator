@@ -62,6 +62,10 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance) *appsv1.StatefulSet 
 		podSpec.TopologySpreadConstraints = instance.Spec.Availability.TopologySpreadConstraints
 	}
 
+	// Onboarding init container: runs non-interactive setup and admin bootstrap
+	// before the server starts. Only runs when config doesn't exist yet.
+	podSpec.InitContainers = append(podSpec.InitContainers, buildOnboardInitContainer(instance))
+
 	// Custom sidecars
 	podSpec.Containers = append(podSpec.Containers, instance.Spec.Sidecars...)
 
@@ -469,6 +473,42 @@ func buildStartupProbe(instance *paperclipv1alpha1.Instance, port int32) *corev1
 	}
 
 	return probe
+}
+
+func buildOnboardInitContainer(instance *paperclipv1alpha1.Instance) corev1.Container {
+	image := containerImage(instance)
+	baseURL := ""
+	if instance.Spec.Deployment.PublicURL != "" {
+		baseURL = instance.Spec.Deployment.PublicURL
+	}
+
+	// Script: run onboard if no config exists, then bootstrap admin if no admin exists.
+	// Both commands are idempotent (onboard skips if config exists, bootstrap skips if admin exists).
+	script := `
+set -e
+CONFIG="/paperclip/instances/default/config.json"
+if [ ! -f "$CONFIG" ]; then
+  echo "Running initial onboarding..."
+  pnpm paperclipai onboard --yes
+fi
+echo "Ensuring admin user is bootstrapped..."
+`
+	if baseURL != "" {
+		script += fmt.Sprintf(`pnpm paperclipai auth bootstrap-ceo --base-url %q 2>&1 || true`, baseURL)
+	} else {
+		script += `pnpm paperclipai auth bootstrap-ceo 2>&1 || true`
+	}
+
+	return corev1.Container{
+		Name:            "onboard",
+		Image:           image,
+		ImagePullPolicy: imagePullPolicy(instance),
+		Command:         []string{"/bin/sh", "-c"},
+		Args:            []string{script},
+		Env:             buildEnvVars(instance),
+		EnvFrom:         instance.Spec.EnvFrom,
+		VolumeMounts:    buildVolumeMounts(instance),
+	}
 }
 
 func containerImage(instance *paperclipv1alpha1.Instance) string {
