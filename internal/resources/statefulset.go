@@ -186,11 +186,7 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 			vars = append(vars, corev1.EnvVar{Name: "DATABASE_URL", Value: instance.Spec.Database.ExternalURL})
 		}
 	case "managed":
-		vars = append(vars, corev1.EnvVar{
-			Name: "DATABASE_URL",
-			Value: fmt.Sprintf("postgresql://paperclip:$(DB_PASSWORD)@%s-db.%s.svc.cluster.local:%d/paperclip",
-				instance.Name, instance.Namespace, PostgreSQLPort),
-		})
+		// DB_PASSWORD must be defined before DATABASE_URL for $(DB_PASSWORD) substitution to work
 		vars = append(vars, corev1.EnvVar{
 			Name: "DB_PASSWORD",
 			ValueFrom: &corev1.EnvVarSource{
@@ -201,6 +197,11 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 					Key: "password",
 				},
 			},
+		})
+		vars = append(vars, corev1.EnvVar{
+			Name: "DATABASE_URL",
+			Value: fmt.Sprintf("postgresql://paperclip:$(DB_PASSWORD)@%s-db.%s.svc.cluster.local:%d/paperclip",
+				instance.Name, instance.Namespace, PostgreSQLPort),
 		})
 		// "embedded" mode uses PGlite - no DATABASE_URL needed
 	}
