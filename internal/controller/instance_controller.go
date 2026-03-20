@@ -24,6 +24,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -77,6 +78,7 @@ type InstanceReconciler struct {
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
 
 // Reconcile moves the cluster state toward the desired state defined by the Instance CR.
 //
@@ -204,6 +206,13 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if pdb := instance.Spec.Availability.PodDisruptionBudget; pdb != nil && pdb.Enabled {
 		if err := r.reconcilePDB(ctx, instance); err != nil {
 			return r.handleError(ctx, instance, "PDB", err)
+		}
+	}
+
+	// 10. Admin bootstrap Job (optional, runs once)
+	if instance.Spec.Auth.AdminUser != nil {
+		if err := r.reconcileBootstrapJob(ctx, instance); err != nil {
+			return r.handleError(ctx, instance, "BootstrapJob", err)
 		}
 	}
 
@@ -529,6 +538,34 @@ func (r *InstanceReconciler) reconcilePDB(ctx context.Context, instance *papercl
 	})
 	if err != nil {
 		return fmt.Errorf("reconciling PDB: %w", err)
+	}
+
+	return nil
+}
+
+func (r *InstanceReconciler) reconcileBootstrapJob(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
+	desired := resources.BuildBootstrapJob(instance)
+	if desired == nil {
+		return nil
+	}
+
+	// Check if Job already exists (it should only run once)
+	existing := &batchv1.Job{}
+	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, existing)
+	if err == nil {
+		// Job already exists, nothing to do
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("checking bootstrap Job: %w", err)
+	}
+
+	// Job does not exist, create it
+	if err := controllerutil.SetControllerReference(instance, desired, r.Scheme); err != nil {
+		return fmt.Errorf("setting owner reference on bootstrap Job: %w", err)
+	}
+	if err := r.Create(ctx, desired); err != nil { // reconcile-guard:allow
+		return fmt.Errorf("creating bootstrap Job: %w", err)
 	}
 
 	return nil

@@ -227,6 +227,26 @@ type AuthSpec struct {
 	// Required when deployment mode is "authenticated".
 	// +optional
 	SecretRef *corev1.SecretKeySelector `json:"secretRef,omitempty"`
+
+	// AdminUser configures the initial admin user that is created automatically
+	// when the instance is first deployed. If not set, the instance will show
+	// a setup screen requiring manual bootstrap.
+	// +optional
+	AdminUser *AdminUserSpec `json:"adminUser,omitempty"`
+}
+
+// AdminUserSpec configures the initial admin user for automatic bootstrap.
+type AdminUserSpec struct {
+	// Email is the admin user's email address (used as login).
+	Email string `json:"email"`
+
+	// Name is the admin user's display name.
+	// +kubebuilder:default="Admin"
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// PasswordSecretRef references a Secret containing the admin password.
+	PasswordSecretRef corev1.SecretKeySelector `json:"passwordSecretRef"`
 }
 
 // SecretsSpec configures Paperclip's built-in secrets management.
