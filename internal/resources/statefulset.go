@@ -480,30 +480,33 @@ func buildOnboardInitContainer(instance *paperclipv1alpha1.Instance) corev1.Cont
 
 	// Create the Paperclip config file if it doesn't exist yet.
 	// Uses `onboard --yes` which accepts quickstart defaults. Unfortunately this also
-	// starts the server, so we run it in the background and kill it once the config exists.
+	// starts the server, so we run it in a subshell and kill the entire process group
+	// once the config file appears.
 	script := `
-set -e
 CONFIG="/paperclip/instances/default/config.json"
 if [ -f "$CONFIG" ]; then
   echo "Config already exists, skipping onboard."
   exit 0
 fi
 echo "Running initial onboarding..."
-# Run onboard in background; it will start the server after creating config
-pnpm paperclipai onboard --yes &
+# Run onboard in a separate process group so we can kill the whole tree
+sh -c 'exec pnpm paperclipai onboard --yes' &
 ONBOARD_PID=$!
-# Wait for the config file to appear
+# Wait for the config file to appear (onboard creates it before starting the server)
 for i in $(seq 1 120); do
   if [ -f "$CONFIG" ]; then
-    echo "Config created. Stopping onboard process."
-    kill $ONBOARD_PID 2>/dev/null || true
-    wait $ONBOARD_PID 2>/dev/null || true
+    echo "Config created successfully."
+    # Kill the entire process tree (onboard + server + node children)
+    kill -9 $ONBOARD_PID 2>/dev/null || true
+    # Also kill any remaining node processes started by onboard
+    pkill -9 -f "paperclipai" 2>/dev/null || true
+    pkill -9 -f "server/dist/index" 2>/dev/null || true
     exit 0
   fi
   sleep 1
 done
 echo "Timed out waiting for config file."
-kill $ONBOARD_PID 2>/dev/null || true
+kill -9 $ONBOARD_PID 2>/dev/null || true
 exit 1
 `
 
