@@ -42,11 +42,19 @@ func BuildBootstrapJob(instance *paperclipv1alpha1.Instance) *batchv1.Job {
 	// 1. Wait for the server to accept connections
 	// 2. Run bootstrap-ceo to get the invite token
 	// 3. Call the sign-up API with the token and admin credentials
+	svcURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:%d", svcName, instance.Namespace, port)
+
+	// Follow the same flow as Paperclip's docker-onboard-smoke.sh:
+	// 1. Wait for server
+	// 2. Sign up admin user (creates account without admin role)
+	// 3. Generate bootstrap invite via CLI
+	// 4. Accept the invite with the authenticated session (promotes to admin/CEO)
 	script := fmt.Sprintf(`
 set -e
 
 SERVER_URL="%s"
-SVC_URL="http://%s.%s.svc.cluster.local:%d"
+SVC_URL="%s"
+COOKIE_JAR=$(mktemp /tmp/cookies.XXXXXX)
 
 echo "Waiting for Paperclip server..."
 for i in $(seq 1 60); do
@@ -59,39 +67,75 @@ for i in $(seq 1 60); do
   sleep 5
 done
 
-echo "Running bootstrap-ceo..."
+# Step 1: Sign up the admin user (or sign in if already exists)
+echo "Creating admin account..."
+SIGNUP_STATUS=$(curl -sS -o /tmp/signup.json -w '%%{http_code}' \
+  -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+  -H "Content-Type: application/json" \
+  -H "Origin: $SERVER_URL" \
+  -X POST "$SVC_URL/api/auth/sign-up/email" \
+  -d "{\"name\":\"%s\",\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}") || true
+
+if echo "$SIGNUP_STATUS" | grep -q '^2'; then
+  echo "Admin account created."
+else
+  echo "Sign-up returned HTTP $SIGNUP_STATUS, trying sign-in..."
+  SIGNIN_STATUS=$(curl -sS -o /tmp/signin.json -w '%%{http_code}' \
+    -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+    -H "Content-Type: application/json" \
+    -H "Origin: $SERVER_URL" \
+    -X POST "$SVC_URL/api/auth/sign-in/email" \
+    -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}") || true
+  if echo "$SIGNIN_STATUS" | grep -q '^2'; then
+    echo "Signed in as existing admin."
+  else
+    echo "Could not sign up or sign in. Sign-up: $(cat /tmp/signup.json 2>/dev/null), Sign-in: $(cat /tmp/signin.json 2>/dev/null)"
+    exit 1
+  fi
+fi
+
+# Step 2: Check if instance is already bootstrapped
+HEALTH=$(curl -sS -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$SVC_URL/api/health" 2>/dev/null) || true
+if echo "$HEALTH" | grep -q '"bootstrapStatus":"ready"'; then
+  echo "Instance already bootstrapped. Nothing to do."
+  rm -f "$COOKIE_JAR"
+  exit 0
+fi
+
+# Step 3: Generate bootstrap invite
+echo "Generating bootstrap invite..."
 BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo --base-url "$SERVER_URL" 2>&1) || true
 echo "$BOOTSTRAP_OUTPUT"
 
-# Extract the invite token from the output
 INVITE_TOKEN=$(echo "$BOOTSTRAP_OUTPUT" | grep -o 'pcp_bootstrap_[a-f0-9]*' | head -1)
-
 if [ -z "$INVITE_TOKEN" ]; then
-  if echo "$BOOTSTRAP_OUTPUT" | grep -qi "already exists\|already been"; then
-    echo "Admin user already exists. Nothing to do."
-    exit 0
-  fi
   echo "Could not extract invite token."
+  rm -f "$COOKIE_JAR"
   exit 1
 fi
 
-echo "Creating admin user with invite token..."
-RESPONSE=$(curl -s -X POST "$SERVER_URL/api/auth/sign-up/email" \
+# Step 4: Accept the invite with the authenticated session
+echo "Accepting bootstrap invite..."
+ACCEPT_STATUS=$(curl -sS -o /tmp/accept.json -w '%%{http_code}' \
+  -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\",\"name\":\"%s\",\"inviteToken\":\"$INVITE_TOKEN\"}") || true
+  -H "Origin: $SERVER_URL" \
+  -X POST "$SVC_URL/api/invites/$INVITE_TOKEN/accept" \
+  -d '{"requestType":"human"}') || true
 
-if echo "$RESPONSE" | grep -q '"user"'; then
-  echo "Admin user created successfully."
-elif echo "$RESPONSE" | grep -qi "already exists\|duplicate"; then
-  echo "Admin user already exists."
-  exit 0
+if echo "$ACCEPT_STATUS" | grep -q '^2'; then
+  echo "Bootstrap complete. Admin user promoted to CEO."
 else
-  echo "Sign-up response: $RESPONSE"
+  echo "Invite acceptance returned HTTP $ACCEPT_STATUS: $(cat /tmp/accept.json 2>/dev/null)"
+  rm -f "$COOKIE_JAR"
   exit 1
 fi
+
+rm -f "$COOKIE_JAR"
+echo "Admin bootstrap finished successfully."
 `,
 		baseURL,
-		svcName, instance.Namespace, port,
+		svcURL,
 		adminName,
 	)
 
