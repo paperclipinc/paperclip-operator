@@ -50,14 +50,8 @@ SVC_URL="http://%s.%s.svc.cluster.local:%d"
 
 echo "Waiting for Paperclip server..."
 for i in $(seq 1 60); do
-  # Accept any HTTP response (including 403 in authenticated mode)
-  if wget -q -O /dev/null "$SVC_URL/" 2>/dev/null; then
-    echo "Server is ready (HTTP 200)."
-    break
-  fi
-  # wget returns non-zero for 4xx/5xx, but the server is still up
-  HTTP_CODE=$(wget --server-response -q -O /dev/null "$SVC_URL/" 2>&1 | grep "HTTP/" | tail -1 | awk '{print $2}') || true
-  if [ -n "$HTTP_CODE" ] && [ "$HTTP_CODE" -gt 0 ] 2>/dev/null; then
+  HTTP_CODE=$(curl -s -o /dev/null -w '%%{http_code}' "$SVC_URL/") || true
+  if [ "$HTTP_CODE" != "000" ] && [ -n "$HTTP_CODE" ]; then
     echo "Server is ready (HTTP $HTTP_CODE)."
     break
   fi
@@ -70,33 +64,29 @@ BOOTSTRAP_OUTPUT=$(pnpm paperclipai auth bootstrap-ceo --base-url "$SERVER_URL" 
 echo "$BOOTSTRAP_OUTPUT"
 
 # Extract the invite token from the output
-INVITE_TOKEN=$(echo "$BOOTSTRAP_OUTPUT" | grep -oP 'pcp_bootstrap_[a-f0-9]+' | head -1)
+INVITE_TOKEN=$(echo "$BOOTSTRAP_OUTPUT" | grep -o 'pcp_bootstrap_[a-f0-9]*' | head -1)
 
 if [ -z "$INVITE_TOKEN" ]; then
-  # Check if admin already exists
   if echo "$BOOTSTRAP_OUTPUT" | grep -qi "already exists\|already been"; then
     echo "Admin user already exists. Nothing to do."
     exit 0
   fi
-  echo "Could not extract invite token. Output was:"
-  echo "$BOOTSTRAP_OUTPUT"
+  echo "Could not extract invite token."
   exit 1
 fi
 
 echo "Creating admin user with invite token..."
-RESPONSE=$(wget -q -O - --post-data "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\",\"name\":\"%s\",\"inviteToken\":\"$INVITE_TOKEN\"}" \
-  --header="Content-Type: application/json" \
-  "$SERVER_URL/api/auth/sign-up/email" 2>&1) || true
+RESPONSE=$(curl -s -X POST "$SERVER_URL/api/auth/sign-up/email" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\",\"name\":\"%s\",\"inviteToken\":\"$INVITE_TOKEN\"}") || true
 
 if echo "$RESPONSE" | grep -q '"user"'; then
   echo "Admin user created successfully."
+elif echo "$RESPONSE" | grep -qi "already exists\|duplicate"; then
+  echo "Admin user already exists."
+  exit 0
 else
   echo "Sign-up response: $RESPONSE"
-  # Don't fail if user already exists
-  if echo "$RESPONSE" | grep -qi "already exists\|duplicate"; then
-    echo "Admin user already exists."
-    exit 0
-  fi
   exit 1
 fi
 `,
