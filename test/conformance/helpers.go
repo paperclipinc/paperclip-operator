@@ -108,6 +108,29 @@ func waitForInstanceReady(ctx context.Context, c client.Client, ns, name string,
 	Fail(fmt.Sprintf("Instance %s/%s did not become Ready within %s", ns, name, timeout))
 }
 
+// waitForOwnedResources blocks until the operator has created the instance's
+// owned workload resources (the application StatefulSet and Service), or fails
+// after timeout. Unlike waitForInstanceReady it does NOT require the workload
+// Pod to pass its readiness probe: the app image may take minutes to pull and
+// boot on a tiny kind cluster, and the database/Redis may not be reachable at
+// all in a lightweight conformance fixture. Idempotency conformance only needs
+// the operator to have settled the desired child objects so their fingerprint
+// can be compared across reconciles; it does not need the app to serve traffic.
+func waitForOwnedResources(ctx context.Context, c client.Client, ns, name string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		sts := &appsv1.StatefulSet{}
+		stsErr := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, sts)
+		svc := &corev1.Service{}
+		svcErr := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, svc)
+		if stsErr == nil && svcErr == nil {
+			return
+		}
+		time.Sleep(2 * time.Second)
+	}
+	Fail(fmt.Sprintf("Instance %s/%s did not have its owned StatefulSet and Service created within %s", ns, name, timeout))
+}
+
 func hasReadyTrue(inst *paperclipv1alpha1.Instance) bool {
 	for _, cond := range inst.Status.Conditions {
 		if cond.Type == "Ready" && cond.Status == "True" {
@@ -235,6 +258,7 @@ var (
 	_ = IsNotFoundError
 	_ = readFile
 	_ = waitForInstanceReady
+	_ = waitForOwnedResources
 	_ = forceRequeue
 	_ = freshNamespace
 	_ = deleteNamespace

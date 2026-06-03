@@ -26,11 +26,19 @@ import (
 )
 
 // idempotencyCorpus maps a human-readable label to a testdata fixture. Each
-// fixture is applied once, allowed to become Ready, then force-requeued
-// repeatedly. After each requeue the resource fingerprint (generation +
-// resourceVersion of owned objects) must be unchanged. A reconciler that
-// rewrites owned objects on every pass (a bare r.Update instead of
-// CreateOrUpdate) fails here.
+// fixture is applied once, allowed to have its owned objects created by the
+// operator, then force-requeued repeatedly. After each requeue the resource
+// fingerprint (generation + resourceVersion of owned objects) must be
+// unchanged. A reconciler that rewrites owned objects on every pass (a bare
+// r.Update instead of CreateOrUpdate) fails here.
+//
+// The fixtures use the embedded (PGlite) database and external/no Redis so the
+// operator never has to provision a managed PostgreSQL or Redis StatefulSet.
+// That keeps each instance single-pod and lets the operator settle its owned
+// resources quickly on a tiny kind cluster. The fingerprint-stability check
+// deliberately does NOT wait for the application Pod to become Ready: that
+// would gate on image pulls and app boot, which idempotency conformance does
+// not measure. It waits only until the owned StatefulSet and Service exist.
 var idempotencyCorpus = []struct {
 	label   string
 	fixture string
@@ -43,7 +51,10 @@ var idempotencyCorpus = []struct {
 
 const (
 	idempotencyReconciles = 10
-	idempotencyReadyWait  = 3 * time.Minute
+	// idempotencyCreateWait bounds how long we wait for the operator to create
+	// the instance's owned StatefulSet and Service. This is creation only (no
+	// image pull or app boot), so it settles quickly even on kind.
+	idempotencyCreateWait = 2 * time.Minute
 	idempotencyPokeWait   = 15 * time.Second
 )
 
@@ -72,8 +83,8 @@ var _ = Describe("idempotency canary", Ordered, func() {
 				DeferCleanup(func() { _, _ = kubectlDelete(namespaced) })
 			})
 
-			It("becomes Ready", func() {
-				waitForInstanceReady(suiteCtx, newClient(), ns, instName, idempotencyReadyWait)
+			It("has its owned StatefulSet and Service created", func() {
+				waitForOwnedResources(suiteCtx, newClient(), ns, instName, idempotencyCreateWait)
 			})
 
 			It(fmt.Sprintf("resource fingerprint is stable across %d reconciles", idempotencyReconciles), func() {

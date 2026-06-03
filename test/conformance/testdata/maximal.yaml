@@ -9,10 +9,14 @@ spec:
   deployment:
     mode: authenticated
     exposure: private
+  # Lightweight backends so the heavy feature surface below (RBAC, NetworkPolicy,
+  # PDB, observability, multi-replica) is exercised for reconcile idempotency
+  # without provisioning managed PostgreSQL/Redis StatefulSets on kind.
   database:
-    mode: managed
+    mode: embedded
   redis:
-    mode: managed
+    mode: external
+    externalURL: redis://redis.example.com:6379
   storage:
     persistence:
       enabled: true
