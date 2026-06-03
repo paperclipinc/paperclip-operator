@@ -38,7 +38,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	gatewayapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
@@ -76,6 +78,8 @@ const (
 	ConditionBackupReady = "BackupReady"
 	// ConditionSuspended indicates the instance is suspended (scaled to zero).
 	ConditionSuspended = "Suspended"
+	// ConditionTailscaleReady indicates the Tailscale serve-config is reconciled.
+	ConditionTailscaleReady = "TailscaleReady"
 
 	// ModeManaged is the value for managed resource modes (database, redis).
 	ModeManaged = "managed"
@@ -195,6 +199,14 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// Reconcile all resources
 	r.setPhase(ctx, instance, paperclipv1alpha1.PhaseProvisioning)
 
+	// Merge the cluster-wide defaults singleton into the in-memory instance
+	// spec for rendering purposes. The merged spec is never written back to
+	// etcd; we only mutate the in-memory copy returned by r.Get so downstream
+	// builders see the defaulted values. Per-instance fields always win.
+	if err := r.applyClusterDefaults(ctx, instance); err != nil {
+		return r.handleError(ctx, instance, "ClusterDefaults", err)
+	}
+
 	// 0. Ensure shared secrets master key exists (before StatefulSet needs it)
 	if err := r.ensureSecretsMasterKey(ctx, instance); err != nil {
 		return r.handleError(ctx, instance, "SecretsMasterKey", err)
@@ -244,6 +256,14 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if instance.Status.AutoUpdate != nil && instance.Status.AutoUpdate.ResolvedDigest != "" {
 		extraPodAnnotations = map[string]string{
 			AnnotationResolvedDigest: instance.Status.AutoUpdate.ResolvedDigest,
+		}
+	}
+
+	// 3.7. Tailscale serve-config ConfigMap (must precede the StatefulSet that
+	// mounts it as a volume).
+	if instance.Spec.Tailscale.Enabled {
+		if err := r.reconcileTailscaleConfig(ctx, instance); err != nil {
+			return r.handleError(ctx, instance, "TailscaleConfig", err)
 		}
 	}
 
@@ -372,6 +392,36 @@ func (r *InstanceReconciler) reconcileServiceAccount(ctx context.Context, instan
 		Status:             metav1.ConditionTrue,
 		Reason:             "RBACProvisioned",
 		Message:            "ServiceAccount and RBAC are provisioned",
+		ObservedGeneration: instance.Generation,
+	})
+	return nil
+}
+
+// reconcileTailscaleConfig reconciles the ConfigMap holding the Tailscale
+// TS_SERVE_CONFIG JSON mounted into the sidecar.
+func (r *InstanceReconciler) reconcileTailscaleConfig(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
+	desired := resources.BuildTailscaleConfigMap(instance)
+	obj := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      desired.Name,
+			Namespace: desired.Namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
+		obj.Labels = desired.Labels
+		obj.Data = desired.Data
+		return controllerutil.SetControllerReference(instance, obj, r.Scheme)
+	})
+	if err != nil {
+		return fmt.Errorf("reconciling Tailscale ConfigMap: %w", err)
+	}
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionTailscaleReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "TailscaleProvisioned",
+		Message:            "Tailscale serve-config is provisioned",
 		ObservedGeneration: instance.Generation,
 	})
 	return nil
@@ -1008,7 +1058,7 @@ func (r *InstanceReconciler) reconcileBootstrapJob(ctx context.Context, instance
 func (r *InstanceReconciler) reconcileBackupCronJob(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
 	desired := resources.BuildBackupCronJob(instance)
 	if desired == nil {
-		// Backup not fully configured (e.g., no S3 bucket) — clean up any existing CronJob.
+		// Backup not fully configured (e.g., no S3 bucket); clean up any existing CronJob.
 		existing := &batchv1.CronJob{}
 		err := r.Get(ctx, types.NamespacedName{
 			Name:      resources.BackupCronJobName(instance),
@@ -1369,6 +1419,7 @@ func (r *InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&paperclipv1alpha1.Instance{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
+		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.Secret{}).
@@ -1377,6 +1428,57 @@ func (r *InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&networkingv1.NetworkPolicy{}).
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
+		Watches(&paperclipv1alpha1.PaperclipClusterDefaults{}, handler.EnqueueRequestsFromMapFunc(r.findInstancesForClusterDefaults)).
 		Named("instance").
 		Complete(r)
+}
+
+// applyClusterDefaults fetches the cluster-scoped PaperclipClusterDefaults
+// singleton (must be named "cluster") and merges its spec into the in-memory
+// instance. The merged fields are only used for rendering owned resources; the
+// user's stored spec is never overwritten in etcd.
+//
+// Cluster defaults are optional: if no singleton exists, the instance is
+// returned unchanged. If a defaults CR exists under a non-singleton name, it is
+// ignored (the cluster-defaults controller reports it as Invalid).
+func (r *InstanceReconciler) applyClusterDefaults(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
+	log := logf.FromContext(ctx)
+
+	defaults := &paperclipv1alpha1.PaperclipClusterDefaults{}
+	err := r.Get(ctx, types.NamespacedName{Name: paperclipv1alpha1.ClusterDefaultsSingletonName}, defaults)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get PaperclipClusterDefaults/%s: %w", paperclipv1alpha1.ClusterDefaultsSingletonName, err)
+	}
+
+	merged := resources.ApplyClusterDefaults(instance, defaults)
+	instance.Spec = merged.Spec
+	log.V(1).Info("applied PaperclipClusterDefaults", "generation", defaults.Generation)
+	return nil
+}
+
+// findInstancesForClusterDefaults enqueues every Instance in the cluster when
+// the "cluster" singleton changes so the merged defaults are re-applied. A
+// PaperclipClusterDefaults under any other name is ignored.
+func (r *InstanceReconciler) findInstancesForClusterDefaults(ctx context.Context, obj client.Object) []reconcile.Request {
+	if obj.GetName() != paperclipv1alpha1.ClusterDefaultsSingletonName {
+		return nil
+	}
+	instanceList := &paperclipv1alpha1.InstanceList{}
+	if err := r.List(ctx, instanceList); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to list Instances for PaperclipClusterDefaults watch")
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, len(instanceList.Items))
+	for i := range instanceList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      instanceList.Items[i].Name,
+				Namespace: instanceList.Items[i].Namespace,
+			},
+		})
+	}
+	return requests
 }

@@ -6497,6 +6497,34 @@ spec:
                         type: object
                     type: object
                 type: object
+              selfConfigure:
+                description: |-
+                  SelfConfigure enables agents to modify their own Instance via
+                  PaperclipSelfConfig resources, gated by an action allowlist.
+                properties:
+                  allowedActions:
+                    description: |-
+                      AllowedActions restricts which action categories the agent can perform.
+                      If empty and enabled is true, no actions are allowed (fail-safe).
+                    items:
+                      description: |-
+                        SelfConfigAction names a category of mutation. Used by
+                        Instance.spec.selfConfigure.allowedActions to gate what the agent may
+                        request via PaperclipSelfConfig.
+                      enum:
+                      - plugins
+                      - config
+                      - envVars
+                      type: string
+                    maxItems: 3
+                    type: array
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled enables self-configuration for this instance. When true, the
+                      agent can create PaperclipSelfConfig resources to modify its own spec.
+                    type: boolean
+                type: object
               shareProcessNamespace:
                 default: true
                 description: |-
@@ -7979,6 +8007,136 @@ spec:
                   resources (Service, ConfigMap, RBAC, NetworkPolicy, PVC) remain fully
                   managed. Set to false to resume normal operation.
                 type: boolean
+              tailscale:
+                description: |-
+                  Tailscale configures an ephemeral Tailscale sidecar that Serves the
+                  Paperclip app over the tailnet.
+                properties:
+                  authKey:
+                    description: |-
+                      AuthKey references a Secret containing the Tailscale auth key. The Secret
+                      must have a key matching AuthKey.Key (default: "authkey"). Use an
+                      ephemeral+reusable key from the Tailscale admin console.
+                    properties:
+                      key:
+                        default: authkey
+                        description: Key is the key within the referenced Secret.
+                          Defaults to "authkey".
+                        type: string
+                      secretRef:
+                        description: SecretRef references the Secret containing the
+                          auth key.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    required:
+                    - secretRef
+                    type: object
+                  enabled:
+                    default: false
+                    description: Enabled enables the Tailscale sidecar.
+                    type: boolean
+                  hostname:
+                    description: Hostname sets the Tailscale device name (defaults
+                      to the instance name).
+                    type: string
+                  image:
+                    description: Image configures the Tailscale sidecar container
+                      image.
+                    properties:
+                      digest:
+                        description: Digest is the container image digest for supply-chain
+                          security.
+                        type: string
+                      repository:
+                        default: ghcr.io/tailscale/tailscale
+                        description: Repository is the container image repository.
+                        type: string
+                      tag:
+                        default: stable
+                        description: Tag is the container image tag.
+                        type: string
+                    type: object
+                  mode:
+                    default: serve
+                    description: |-
+                      Mode selects the Tailscale exposure mode.
+                      "serve" exposes the instance to tailnet members only (default).
+                      "funnel" exposes the instance to the public internet via Tailscale Funnel.
+                    enum:
+                    - serve
+                    - funnel
+                    type: string
+                  resources:
+                    description: Resources specifies compute resources for the Tailscale
+                      sidecar container.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This is an alpha field and requires enabling the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                type: object
             type: object
           status:
             description: InstanceStatus defines the observed state of Instance.

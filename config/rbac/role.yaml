@@ -157,6 +157,7 @@ rules:
   - paperclip.inc
   resources:
   - instances
+  - paperclipselfconfigs
   verbs:
   - create
   - delete
@@ -169,16 +170,29 @@ rules:
   - paperclip.inc
   resources:
   - instances/finalizers
+  - paperclipselfconfigs/finalizers
   verbs:
   - update
 - apiGroups:
   - paperclip.inc
   resources:
   - instances/status
+  - paperclipclusterdefaults/status
+  - paperclipselfconfigs/status
   verbs:
   - get
   - patch
   - update
+- apiGroups:
+  - paperclip.inc
+  resources:
+  - paperclipclusterdefaults
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - policy
   resources:

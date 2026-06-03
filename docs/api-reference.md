@@ -10,6 +10,8 @@ Package v1alpha1 contains API Schema definitions for the paperclip v1alpha1 API 
 
 ### Resource Types
 - [Instance](#instance)
+- [PaperclipClusterDefaults](#paperclipclusterdefaults)
+- [PaperclipSelfConfig](#paperclipselfconfig)
 
 
 
@@ -372,6 +374,7 @@ ImageSpec configures the container image.
 
 _Appears in:_
 - [InstanceSpec](#instancespec)
+- [PaperclipClusterDefaultsSpec](#paperclipclusterdefaultsspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -483,6 +486,7 @@ _Appears in:_
 | `adapters` _[AdaptersSpec](#adaptersspec)_ | Adapters configures agent runtime adapters. |  | Optional: \{\} <br /> |
 | `connections` _[ConnectionsSpec](#connectionsspec)_ | Connections configures third-party OAuth provider credentials for<br />the Paperclip connections system (GitHub, GitLab, Slack, etc.). |  | Optional: \{\} <br /> |
 | `plugins` _[PluginRef](#pluginref) array_ | Plugins lists plugins to install. |  | Optional: \{\} <br /> |
+| `selfConfigure` _[SelfConfigureSpec](#selfconfigurespec)_ | SelfConfigure enables agents to modify their own Instance via<br />PaperclipSelfConfig resources, gated by an action allowlist. |  | Optional: \{\} <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#envvar-v1-core) array_ | Env specifies additional environment variables for the Paperclip container. |  | Optional: \{\} <br /> |
 | `envFrom` _[EnvFromSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#envfromsource-v1-core) array_ | EnvFrom specifies additional environment variable sources for the Paperclip container. |  | Optional: \{\} <br /> |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies the compute resources for the Paperclip container. |  | Optional: \{\} <br /> |
@@ -495,6 +499,7 @@ _Appears in:_
 | `probes` _[ProbesSpec](#probesspec)_ | Probes configures liveness, readiness, and startup probes. |  | Optional: \{\} <br /> |
 | `backup` _[BackupSpec](#backupspec)_ | Backup configures periodic backup to S3-compatible storage. |  | Optional: \{\} <br /> |
 | `restoreFrom` _string_ | RestoreFrom specifies a remote backup path to restore from on first boot. |  | Optional: \{\} <br /> |
+| `tailscale` _[TailscaleSpec](#tailscalespec)_ | Tailscale configures an ephemeral Tailscale sidecar that Serves the<br />Paperclip app over the tailnet. |  | Optional: \{\} <br /> |
 | `sidecars` _[Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#container-v1-core) array_ | Sidecars specifies additional sidecar containers. |  | Optional: \{\} <br /> |
 | `initContainers` _[Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#container-v1-core) array_ | InitContainers specifies additional init containers. |  | Optional: \{\} <br /> |
 | `extraVolumes` _[Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#volume-v1-core) array_ | ExtraVolumes specifies additional volumes to add to the pod. |  | Optional: \{\} <br /> |
@@ -605,6 +610,7 @@ NetworkingSpec configures service and ingress.
 
 _Appears in:_
 - [InstanceSpec](#instancespec)
+- [PaperclipClusterDefaultsSpec](#paperclipclusterdefaultsspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -659,6 +665,7 @@ ObservabilitySpec configures monitoring and logging.
 
 _Appears in:_
 - [InstanceSpec](#instancespec)
+- [PaperclipClusterDefaultsSpec](#paperclipclusterdefaultsspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -682,6 +689,102 @@ _Appears in:_
 | `enabled` _boolean_ | Enabled controls whether a PDB is created. |  |  |
 | `minAvailable` _integer_ | MinAvailable specifies the minimum number of pods that must be available. |  | Optional: \{\} <br /> |
 | `maxUnavailable` _integer_ | MaxUnavailable specifies the maximum number of pods that can be unavailable. |  | Optional: \{\} <br /> |
+
+
+#### PaperclipClusterDefaults
+
+
+
+PaperclipClusterDefaults is a cluster-scoped singleton (name must be "cluster")
+that provides default values merged into every Instance at reconcile time. It
+gives platform operators a single source of truth for org-wide image, storage
+class, database mode, observability, networking, and shared environment-variable
+defaults without duplicating the same boilerplate in every Instance manifest.
+
+Precedence: per-instance fields always win over cluster defaults. A default is
+only applied when the corresponding instance field is unset. The merged values
+are used only for rendering owned resources; the user's stored spec in etcd is
+never overwritten.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `paperclip.inc/v1alpha1` | | |
+| `kind` _string_ | `PaperclipClusterDefaults` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[PaperclipClusterDefaultsSpec](#paperclipclusterdefaultsspec)_ |  |  |  |
+
+
+#### PaperclipClusterDefaultsSpec
+
+
+
+PaperclipClusterDefaultsSpec defines cluster-wide defaults that the operator
+merges into every Instance at reconcile time. Per-instance fields always win:
+a default is only applied when the corresponding instance field is unset.
+
+
+
+_Appears in:_
+- [PaperclipClusterDefaults](#paperclipclusterdefaults)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `image` _[ImageSpec](#imagespec)_ | Image is the default container image configuration applied to instances<br />where the corresponding instance fields are unset. Each sub-field is<br />merged independently (e.g. a cluster-default tag still applies even when<br />the instance sets its own repository). |  | Optional: \{\} <br /> |
+| `storageClass` _string_ | StorageClass is the default storage class applied to the Paperclip data<br />PVC, the managed PostgreSQL PVC, and the managed Redis PVC when those<br />fields are unset on the instance. |  | Optional: \{\} <br /> |
+| `databaseMode` _string_ | DatabaseMode is the default database mode ("embedded", "external", or<br />"managed") applied to instances where spec.database.mode is unset. |  | Enum: [embedded external managed] <br />Optional: \{\} <br /> |
+| `observability` _[ObservabilitySpec](#observabilityspec)_ | Observability configures cluster-wide observability defaults that are<br />merged into instances where the corresponding fields are unset. |  | Optional: \{\} <br /> |
+| `networking` _[NetworkingSpec](#networkingspec)_ | Networking configures cluster-wide networking defaults. Currently only<br />the default Service type is merged when the instance leaves it unset. |  | Optional: \{\} <br /> |
+| `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#envvar-v1-core) array_ | Env is a list of default environment variables merged into every<br />instance's container env. Instance-level env entries with the same Name<br />override the cluster default for that name. Defaults appear first in the<br />resulting env list, followed by instance-only names. |  | Optional: \{\} <br /> |
+
+
+#### PaperclipSelfConfig
+
+
+
+PaperclipSelfConfig is the Schema for the paperclipselfconfigs API. It
+represents a request from an agent to modify its own parent Instance spec,
+gated by the parent's .spec.selfConfigure allowlist and applied via
+Server-Side Apply with a dedicated field manager.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `paperclip.inc/v1alpha1` | | |
+| `kind` _string_ | `PaperclipSelfConfig` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[PaperclipSelfConfigSpec](#paperclipselfconfigspec)_ |  |  |  |
+
+
+#### PaperclipSelfConfigSpec
+
+
+
+PaperclipSelfConfigSpec is an agent-driven, audited request to mutate the
+parent Instance. The operator validates against the parent's
+.spec.selfConfigure policy, then applies via Server-Side Apply with the
+dedicated field manager "paperclip-selfconfig" so GitOps controllers do not
+flap over the agent-owned fields.
+
+
+
+_Appears in:_
+- [PaperclipSelfConfig](#paperclipselfconfig)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `instanceRef` _string_ | InstanceRef is the name of the parent Instance in the same namespace. |  | MaxLength: 253 <br />MinLength: 1 <br /> |
+| `addPlugins` _[PluginRef](#pluginref) array_ | AddPlugins appends plugins to the parent's .spec.plugins. |  | MaxItems: 20 <br />Optional: \{\} <br /> |
+| `removePlugins` _string array_ | RemovePlugins is a list of plugin names to remove from the parent. |  | MaxItems: 20 <br />Optional: \{\} <br /> |
+| `patchConfig` _[JSON](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#json-v1-apiextensions-k8s-io)_ | PatchConfig is a JSON object deep-merged into the agent runtime config<br />(exposed to the container as PAPERCLIP_CONFIG_PATCH). Protected keys are<br />rejected by the operator. |  | Optional: \{\} <br /> |
+| `addEnvVars` _[SelfConfigEnvVar](#selfconfigenvvar) array_ | AddEnvVars is a list of environment variables to add (plain values only). |  | MaxItems: 20 <br />Optional: \{\} <br /> |
+| `removeEnvVars` _string array_ | RemoveEnvVars is a list of environment variable names to remove. |  | MaxItems: 20 <br />Optional: \{\} <br /> |
 
 
 #### PersistenceSpec
@@ -713,6 +816,7 @@ PluginRef references a Paperclip plugin.
 
 _Appears in:_
 - [InstanceSpec](#instancespec)
+- [PaperclipSelfConfigSpec](#paperclipselfconfigspec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
@@ -849,6 +953,63 @@ _Appears in:_
 | `rbac` _[RBACSpec](#rbacspec)_ | RBAC configures ServiceAccount and RBAC settings. |  | Optional: \{\} <br /> |
 
 
+#### SelfConfigAction
+
+_Underlying type:_ _string_
+
+SelfConfigAction names a category of mutation. Used by
+Instance.spec.selfConfigure.allowedActions to gate what the agent may
+request via PaperclipSelfConfig.
+
+_Validation:_
+- Enum: [plugins config envVars]
+
+_Appears in:_
+- [SelfConfigureSpec](#selfconfigurespec)
+
+| Field | Description |
+| --- | --- |
+| `plugins` | SelfConfigActionPlugins permits adding/removing plugins.<br /> |
+| `config` | SelfConfigActionConfig permits patching the agent runtime config.<br /> |
+| `envVars` | SelfConfigActionEnvVars permits adding/removing plain-value env vars.<br /> |
+
+
+#### SelfConfigEnvVar
+
+
+
+SelfConfigEnvVar defines a plain-value environment variable (no secret refs).
+
+
+
+_Appears in:_
+- [PaperclipSelfConfigSpec](#paperclipselfconfigspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name of the environment variable. Must be a C_IDENTIFIER. |  | MinLength: 1 <br />Pattern: `^[A-Za-z_][A-Za-z0-9_]*$` <br /> |
+| `value` _string_ | Value of the environment variable. |  |  |
+
+
+
+
+#### SelfConfigureSpec
+
+
+
+SelfConfigureSpec configures whether an agent can modify its own Instance.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled enables self-configuration for this instance. When true, the<br />agent can create PaperclipSelfConfig resources to modify its own spec. | false | Optional: \{\} <br /> |
+| `allowedActions` _[SelfConfigAction](#selfconfigaction) array_ | AllowedActions restricts which action categories the agent can perform.<br />If empty and enabled is true, no actions are allowed (fail-safe). |  | Enum: [plugins config envVars] <br />MaxItems: 3 <br />Optional: \{\} <br /> |
+
+
 #### ServiceMonitorSpec
 
 
@@ -898,5 +1059,65 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `persistence` _[PersistenceSpec](#persistencespec)_ | Persistence configures the PVC for the Paperclip data directory (/paperclip). |  | Optional: \{\} <br /> |
+
+
+#### TailscaleAuthKeySpec
+
+
+
+TailscaleAuthKeySpec references a Secret key holding the Tailscale auth key.
+
+
+
+_Appears in:_
+- [TailscaleSpec](#tailscalespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `secretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | SecretRef references the Secret containing the auth key. |  |  |
+| `key` _string_ | Key is the key within the referenced Secret. Defaults to "authkey". | authkey | Optional: \{\} <br /> |
+
+
+#### TailscaleImageSpec
+
+
+
+TailscaleImageSpec defines the Tailscale sidecar container image.
+
+
+
+_Appears in:_
+- [TailscaleSpec](#tailscalespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `repository` _string_ | Repository is the container image repository. | ghcr.io/tailscale/tailscale | Optional: \{\} <br /> |
+| `tag` _string_ | Tag is the container image tag. | stable | Optional: \{\} <br /> |
+| `digest` _string_ | Digest is the container image digest for supply-chain security. |  | Optional: \{\} <br /> |
+
+
+#### TailscaleSpec
+
+
+
+TailscaleSpec configures an ephemeral Tailscale sidecar for secure tailnet
+access. When enabled, a userspace tailscaled sidecar runs alongside the
+Paperclip container and Serves the app (port 3100) over the tailnet via
+TS_SERVE_CONFIG. Use an ephemeral, reusable auth key from the Tailscale admin
+console so the node is automatically removed when the pod is deleted.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled enables the Tailscale sidecar. | false | Optional: \{\} <br /> |
+| `mode` _string_ | Mode selects the Tailscale exposure mode.<br />"serve" exposes the instance to tailnet members only (default).<br />"funnel" exposes the instance to the public internet via Tailscale Funnel. | serve | Enum: [serve funnel] <br />Optional: \{\} <br /> |
+| `image` _[TailscaleImageSpec](#tailscaleimagespec)_ | Image configures the Tailscale sidecar container image. |  | Optional: \{\} <br /> |
+| `authKey` _[TailscaleAuthKeySpec](#tailscaleauthkeyspec)_ | AuthKey references a Secret containing the Tailscale auth key. The Secret<br />must have a key matching AuthKey.Key (default: "authkey"). Use an<br />ephemeral+reusable key from the Tailscale admin console. |  | Optional: \{\} <br /> |
+| `hostname` _string_ | Hostname sets the Tailscale device name (defaults to the instance name). |  | Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies compute resources for the Tailscale sidecar container. |  | Optional: \{\} <br /> |
 
 
