@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.11.2...v0.12.0) (2026-06-03)
+
+
+### Features
+
+* bring paperclip-operator to parity (tier 1/2 feature port) ([#65](https://github.com/paperclipinc/paperclip-operator/issues/65)) ([97b9d0f](https://github.com/paperclipinc/paperclip-operator/commit/97b9d0ffd8ce570b6408d39ee2daa0e12b13a488))
+* Tier 3 cross-pollination - PaperclipClusterDefaults + PaperclipSelfConfig CRDs + Tailscale sidecar ([#68](https://github.com/paperclipinc/paperclip-operator/issues/68)) ([5bb11f0](https://github.com/paperclipinc/paperclip-operator/commit/5bb11f0e49b32f91a627e83da41acb1a327d4dc2))
+
 ## [0.11.2](https://github.com/paperclipinc/paperclip-operator/compare/v0.11.1...v0.11.2) (2026-06-03)
 
 
