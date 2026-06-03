@@ -149,6 +149,20 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 scorecard: operator-sdk ## Run operator-sdk scorecard tests.
 	$(OPERATOR_SDK) scorecard bundle --wait-time 120s
 
+.PHONY: verify-signing
+verify-signing: ## Verify the latest published release is Cosign-signed and SBOM-attested.
+	@VERSION=$$(gh release view --repo paperclipinc/paperclip-operator --json tagName --jq .tagName); \
+	IMAGE="ghcr.io/paperclipinc/paperclip-operator:$${VERSION}"; \
+	echo "Verifying $${IMAGE}..."; \
+	cosign verify "$${IMAGE}" \
+	  --certificate-identity-regexp 'https://github.com/paperclipinc/paperclip-operator/.github/workflows/.*' \
+	  --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null || { echo "::error::signature verification failed for $${IMAGE}"; exit 1; }; \
+	echo "Verifying SBOM attestation..."; \
+	cosign verify-attestation "$${IMAGE}" --type spdxjson \
+	  --certificate-identity-regexp 'https://github.com/paperclipinc/paperclip-operator/.github/workflows/.*' \
+	  --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null || { echo "::error::SBOM attestation verification failed for $${IMAGE}"; exit 1; }; \
+	echo "OK: $${IMAGE} is signed and SBOM-attested."
+
 .PHONY: bench
 bench: ## Run benchmarks for resource builders.
 	go test ./internal/resources/ -bench=. -benchmem -run=^$$ -count=1
