@@ -1,4 +1,6 @@
 ## Append samples of your project ##
 resources:
 - paperclip_v1alpha1_instance.yaml
+- paperclip_v1alpha1_paperclipclusterdefaults.yaml
+- paperclip_v1alpha1_paperclipselfconfig.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

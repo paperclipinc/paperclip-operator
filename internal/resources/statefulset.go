@@ -94,6 +94,12 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance, extraPodAnnotations 
 	// before the server starts. Only runs when config doesn't exist yet.
 	podSpec.InitContainers = append(podSpec.InitContainers, buildOnboardInitContainer(instance))
 
+	// Tailscale sidecar (ephemeral node that Serves the app over the tailnet)
+	if instance.Spec.Tailscale.Enabled {
+		podSpec.Containers = append(podSpec.Containers, BuildTailscaleContainer(instance))
+		podSpec.Volumes = append(podSpec.Volumes, TailscaleVolumes(instance)...)
+	}
+
 	// Custom sidecars
 	podSpec.Containers = append(podSpec.Containers, instance.Spec.Sidecars...)
 

@@ -92,6 +92,24 @@ func BuildNetworkPolicy(instance *paperclipv1alpha1.Instance) *networkingv1.Netw
 		})
 	}
 
+	// Allow Tailscale STUN (3478/udp) and WireGuard (41641/udp) egress when the
+	// Tailscale sidecar is enabled. The HTTPS rule above already covers the
+	// DERP relay and control-plane traffic (443/tcp).
+	if instance.Spec.Tailscale.Enabled {
+		np.Spec.Egress = append(np.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     Ptr(intstr.FromInt32(3478)),
+					Protocol: Ptr(corev1.ProtocolUDP),
+				},
+				{
+					Port:     Ptr(intstr.FromInt32(41641)),
+					Protocol: Ptr(corev1.ProtocolUDP),
+				},
+			},
+		})
+	}
+
 	// Allow egress to database
 	switch instance.Spec.Database.Mode {
 	case managedMode, "":

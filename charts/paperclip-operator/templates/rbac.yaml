@@ -15,6 +15,23 @@ rules:
   - apiGroups: ["paperclip.inc"]
     resources: ["instances/finalizers"]
     verbs: ["update"]
+  # PaperclipClusterDefaults CRD (cluster-scoped defaults singleton)
+  - apiGroups: ["paperclip.inc"]
+    resources: ["paperclipclusterdefaults"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["paperclip.inc"]
+    resources: ["paperclipclusterdefaults/status"]
+    verbs: ["get", "update", "patch"]
+  # PaperclipSelfConfig CRD (agent-driven, SSA-applied self-config)
+  - apiGroups: ["paperclip.inc"]
+    resources: ["paperclipselfconfigs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["paperclip.inc"]
+    resources: ["paperclipselfconfigs/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["paperclip.inc"]
+    resources: ["paperclipselfconfigs/finalizers"]
+    verbs: ["update"]
   # Core resources
   - apiGroups: [""]
     resources: ["services", "configmaps", "persistentvolumeclaims", "serviceaccounts"]
