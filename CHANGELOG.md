@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.2](https://github.com/paperclipinc/paperclip-operator/compare/v0.11.1...v0.11.2) (2026-06-03)
+
+
+### Bug Fixes
+
+* **ci:** ship operators/paperclip-operator/ci.yaml with every submission ([#60](https://github.com/paperclipinc/paperclip-operator/issues/60)) ([42b323e](https://github.com/paperclipinc/paperclip-operator/commit/42b323e1897bcebea3d616a00ebfc1e3b71c3dc0))
+* point NOTICE attribution at github.com/paperclipinc ([#62](https://github.com/paperclipinc/paperclip-operator/issues/62)) ([b50e5ed](https://github.com/paperclipinc/paperclip-operator/commit/b50e5ed08c5af179151dbb1b2a6f2d3f0af9a0d4))
+
 ## [0.11.1](https://github.com/paperclipinc/paperclip-operator/compare/v0.11.0...v0.11.1) (2026-04-18)
 
 
