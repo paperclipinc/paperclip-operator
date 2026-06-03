@@ -1,0 +1,24 @@
+apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata:
+  name: conf-observability
+spec:
+  image:
+    tag: v1.0.0
+  # Embedded (PGlite) database: single-pod, no managed PostgreSQL StatefulSet,
+  # so the operator can converge owned resources fast on kind.
+  database:
+    mode: embedded
+  storage:
+    persistence:
+      enabled: true
+      size: 1Gi
+  observability:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+      prometheusRule:
+        enabled: true
+      grafanaDashboard:
+        enabled: true

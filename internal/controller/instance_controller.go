@@ -31,6 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -59,6 +60,22 @@ const (
 	ConditionServiceReady = "ServiceReady"
 	// ConditionRedisReady indicates the managed Redis is ready.
 	ConditionRedisReady = "RedisReady"
+	// ConditionNetworkPolicyReady indicates the NetworkPolicy is reconciled.
+	ConditionNetworkPolicyReady = "NetworkPolicyReady"
+	// ConditionRBACReady indicates the ServiceAccount and RBAC are reconciled.
+	ConditionRBACReady = "RBACReady"
+	// ConditionIngressReady indicates the Ingress is reconciled.
+	ConditionIngressReady = "IngressReady"
+	// ConditionHTTPRouteReady indicates the HTTPRoute is reconciled.
+	ConditionHTTPRouteReady = "HTTPRouteReady"
+	// ConditionPDBReady indicates the PodDisruptionBudget is reconciled.
+	ConditionPDBReady = "PDBReady"
+	// ConditionHPAReady indicates the HorizontalPodAutoscaler is reconciled.
+	ConditionHPAReady = "HPAReady"
+	// ConditionBackupReady indicates the backup CronJob is reconciled.
+	ConditionBackupReady = "BackupReady"
+	// ConditionSuspended indicates the instance is suspended (scaled to zero).
+	ConditionSuspended = "Suspended"
 
 	// ModeManaged is the value for managed resource modes (database, redis).
 	ModeManaged = "managed"
@@ -99,6 +116,7 @@ type InstanceReconciler struct {
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile moves the cluster state toward the desired state defined by the Instance CR.
 //
@@ -120,7 +138,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	defer func() {
 		reconcileDuration.WithLabelValues(instance.Name, instance.Namespace).Observe(time.Since(start).Seconds())
 		// Update phase metric
-		for _, phase := range []string{"Pending", "Provisioning", "Running", "Degraded", "Failed", "Terminating"} {
+		for _, phase := range []string{"Pending", "Provisioning", "Running", "Degraded", "Failed", "Terminating", "BackingUp", "Restoring", "Updating", "Suspended"} {
 			val := float64(0)
 			if string(instance.Status.Phase) == phase {
 				val = 1
@@ -300,6 +318,16 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
+	// 12. PrometheusRule (optional)
+	if err := r.reconcilePrometheusRule(ctx, instance); err != nil {
+		return r.handleError(ctx, instance, "PrometheusRule", err)
+	}
+
+	// 13. Grafana dashboards (optional)
+	if err := r.reconcileGrafanaDashboards(ctx, instance); err != nil {
+		return r.handleError(ctx, instance, "GrafanaDashboards", err)
+	}
+
 	// Update status
 	if err := r.updateStatus(ctx, instance); err != nil {
 		return ctrl.Result{}, err
@@ -338,6 +366,14 @@ func (r *InstanceReconciler) reconcileServiceAccount(ctx context.Context, instan
 	}
 
 	instance.Status.ManagedResources.ServiceAccount = obj.Name
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionRBACReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "RBACProvisioned",
+		Message:            "ServiceAccount and RBAC are provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -665,8 +701,9 @@ func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 		obj.Labels = desired.Labels
 		// When HPA is enabled, preserve the current replica count to avoid
-		// fighting the autoscaler on every reconcile.
-		if as := instance.Spec.Availability.AutoScaling; as != nil && as.Enabled && obj.Spec.Replicas != nil {
+		// fighting the autoscaler on every reconcile. Suspended takes priority:
+		// scale-to-zero must win over the autoscaler's last-known count.
+		if as := instance.Spec.Availability.AutoScaling; as != nil && as.Enabled && obj.Spec.Replicas != nil && !instance.Spec.Suspended {
 			desired.Spec.Replicas = obj.Spec.Replicas
 		}
 		obj.Spec = desired.Spec
@@ -679,11 +716,20 @@ func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance 
 	instance.Status.ManagedResources.StatefulSet = obj.Name
 
 	// Update StatefulSet condition
-	ready := obj.Status.ReadyReplicas > 0
 	status := metav1.ConditionFalse
 	reason := "StatefulSetNotReady"
 	message := "StatefulSet has no ready replicas"
-	if ready {
+	if instance.Spec.Suspended {
+		// Suspended: desired is 0 replicas. Ready once all pods are terminated.
+		if obj.Status.Replicas == 0 {
+			status = metav1.ConditionTrue
+			reason = "StatefulSetSuspended"
+			message = "StatefulSet scaled to zero (instance suspended)"
+		} else {
+			reason = "StatefulSetSuspending"
+			message = fmt.Sprintf("StatefulSet draining %d replicas (instance suspended)", obj.Status.Replicas)
+		}
+	} else if obj.Status.ReadyReplicas > 0 {
 		status = metav1.ConditionTrue
 		reason = "StatefulSetReady"
 		message = fmt.Sprintf("StatefulSet has %d ready replicas", obj.Status.ReadyReplicas)
@@ -759,6 +805,14 @@ func (r *InstanceReconciler) reconcileIngress(ctx context.Context, instance *pap
 	}
 
 	instance.Status.ManagedResources.Ingress = obj.Name
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionIngressReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "IngressProvisioned",
+		Message:            "Ingress is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -786,6 +840,14 @@ func (r *InstanceReconciler) reconcileHTTPRoute(ctx context.Context, instance *p
 	}
 
 	instance.Status.ManagedResources.HTTPRoute = obj.Name
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionHTTPRouteReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "HTTPRouteProvisioned",
+		Message:            "HTTPRoute is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -808,6 +870,14 @@ func (r *InstanceReconciler) reconcileNetworkPolicy(ctx context.Context, instanc
 	}
 
 	instance.Status.ManagedResources.NetworkPolicy = obj.Name
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionNetworkPolicyReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "NetworkPolicyProvisioned",
+		Message:            "NetworkPolicy is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -869,6 +939,13 @@ func (r *InstanceReconciler) reconcileHPA(ctx context.Context, instance *papercl
 		return fmt.Errorf("reconciling HPA: %w", err)
 	}
 
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionHPAReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "HPAProvisioned",
+		Message:            "HorizontalPodAutoscaler is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -890,6 +967,13 @@ func (r *InstanceReconciler) reconcilePDB(ctx context.Context, instance *papercl
 		return fmt.Errorf("reconciling PDB: %w", err)
 	}
 
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionPDBReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "PDBProvisioned",
+		Message:            "PodDisruptionBudget is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -955,11 +1039,147 @@ func (r *InstanceReconciler) reconcileBackupCronJob(ctx context.Context, instanc
 		return fmt.Errorf("reconciling backup CronJob: %w", err)
 	}
 
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionBackupReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "BackupProvisioned",
+		Message:            "Backup CronJob is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
+	return nil
+}
+
+// reconcilePrometheusRule reconciles the optional PrometheusRule with default
+// operator alerts. When the monitoring.coreos.com CRD is not installed, it is
+// skipped silently. When disabled, any existing PrometheusRule is removed.
+func (r *InstanceReconciler) reconcilePrometheusRule(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
+	enabled := instance.Spec.Observability.Metrics.PrometheusRule != nil &&
+		instance.Spec.Observability.Metrics.PrometheusRule.Enabled
+
+	if !enabled {
+		existing := &unstructured.Unstructured{}
+		existing.SetGroupVersionKind(resources.PrometheusRuleGVK())
+		existing.SetName(resources.PrometheusRuleName(instance))
+		existing.SetNamespace(instance.Namespace)
+		if err := r.Delete(ctx, existing); err != nil && !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+			return err
+		}
+		instance.Status.ManagedResources.PrometheusRule = ""
+		return nil
+	}
+
+	pr := &unstructured.Unstructured{}
+	pr.SetGroupVersionKind(resources.PrometheusRuleGVK())
+	pr.SetName(resources.PrometheusRuleName(instance))
+	pr.SetNamespace(instance.Namespace)
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, pr, func() error {
+		desired := resources.BuildPrometheusRule(instance)
+		if spec, ok := desired.Object["spec"]; ok {
+			pr.Object["spec"] = spec
+		}
+		pr.SetLabels(desired.GetLabels())
+		return controllerutil.SetControllerReference(instance, pr, r.Scheme)
+	})
+	if meta.IsNoMatchError(err) {
+		// PrometheusRule CRD not installed - skip silently.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reconciling PrometheusRule: %w", err)
+	}
+
+	instance.Status.ManagedResources.PrometheusRule = pr.GetName()
+	return nil
+}
+
+// reconcileGrafanaDashboards reconciles the optional operator and instance
+// Grafana dashboard ConfigMaps. When disabled, any existing dashboards are removed.
+func (r *InstanceReconciler) reconcileGrafanaDashboards(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
+	enabled := instance.Spec.Observability.Metrics.GrafanaDashboard != nil &&
+		instance.Spec.Observability.Metrics.GrafanaDashboard.Enabled
+
+	if !enabled {
+		for _, name := range []string{
+			resources.GrafanaDashboardOperatorName(instance),
+			resources.GrafanaDashboardInstanceName(instance),
+		} {
+			existing := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: instance.Namespace},
+			}
+			if err := r.Delete(ctx, existing); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+		instance.Status.ManagedResources.GrafanaDashboardOperator = ""
+		instance.Status.ManagedResources.GrafanaDashboardInstance = ""
+		return nil
+	}
+
+	opCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resources.GrafanaDashboardOperatorName(instance),
+			Namespace: instance.Namespace,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, opCM, func() error {
+		desired := resources.BuildGrafanaDashboardOperator(instance)
+		opCM.Labels = desired.Labels
+		opCM.Annotations = desired.Annotations
+		opCM.Data = desired.Data
+		return controllerutil.SetControllerReference(instance, opCM, r.Scheme)
+	}); err != nil {
+		return fmt.Errorf("reconciling operator Grafana dashboard: %w", err)
+	}
+	instance.Status.ManagedResources.GrafanaDashboardOperator = opCM.Name
+
+	instCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resources.GrafanaDashboardInstanceName(instance),
+			Namespace: instance.Namespace,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, instCM, func() error {
+		desired := resources.BuildGrafanaDashboardInstance(instance)
+		instCM.Labels = desired.Labels
+		instCM.Annotations = desired.Annotations
+		instCM.Data = desired.Data
+		return controllerutil.SetControllerReference(instance, instCM, r.Scheme)
+	}); err != nil {
+		return fmt.Errorf("reconciling instance Grafana dashboard: %w", err)
+	}
+	instance.Status.ManagedResources.GrafanaDashboardInstance = instCM.Name
+
 	return nil
 }
 
 func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
 	instance.Status.ObservedGeneration = instance.Generation
+
+	// Suspended: override phase and readiness. The workload is scaled to zero
+	// but all non-runtime resources remain managed.
+	if instance.Spec.Suspended {
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionSuspended,
+			Status:             metav1.ConditionTrue,
+			Reason:             "Suspended",
+			Message:            "Instance is suspended (spec.suspended=true), workload scaled to zero",
+			ObservedGeneration: instance.Generation,
+		})
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             "Suspended",
+			Message:            "Instance is suspended, not serving traffic",
+			ObservedGeneration: instance.Generation,
+		})
+		instance.Status.Phase = paperclipv1alpha1.PhaseSuspended
+		r.setEndpoint(instance)
+		return r.Status().Update(ctx, instance)
+	}
+
+	// Not suspended: clear any stale Suspended condition.
+	meta.RemoveStatusCondition(&instance.Status.Conditions, ConditionSuspended)
 
 	// Determine overall phase
 	allReady := allSubConditionsReady(instance.Status.Conditions)
@@ -984,19 +1204,23 @@ func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *papercl
 		})
 	}
 
-	// Set endpoint
-	if instance.Spec.Deployment.PublicURL != "" {
-		instance.Status.Endpoint = instance.Spec.Deployment.PublicURL
-	} else {
-		port := int32(3100)
-		if instance.Spec.Networking.Service.Port > 0 {
-			port = instance.Spec.Networking.Service.Port
-		}
-		instance.Status.Endpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
-			resources.ServiceName(instance), instance.Namespace, port)
-	}
+	r.setEndpoint(instance)
 
 	return r.Status().Update(ctx, instance)
+}
+
+// setEndpoint records the primary service endpoint URL in status.
+func (r *InstanceReconciler) setEndpoint(instance *paperclipv1alpha1.Instance) {
+	if instance.Spec.Deployment.PublicURL != "" {
+		instance.Status.Endpoint = instance.Spec.Deployment.PublicURL
+		return
+	}
+	port := int32(3100)
+	if instance.Spec.Networking.Service.Port > 0 {
+		port = instance.Spec.Networking.Service.Port
+	}
+	instance.Status.Endpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
+		resources.ServiceName(instance), instance.Namespace, port)
 }
 
 // allSubConditionsReady returns true when every condition except ConditionReady
@@ -1005,7 +1229,7 @@ func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *papercl
 // from ever becoming true.
 func allSubConditionsReady(conditions []metav1.Condition) bool {
 	for _, cond := range conditions {
-		if cond.Type == ConditionReady {
+		if cond.Type == ConditionReady || cond.Type == ConditionSuspended {
 			continue
 		}
 		if cond.Status != metav1.ConditionTrue {

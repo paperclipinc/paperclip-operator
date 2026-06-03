@@ -149,9 +149,49 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 scorecard: operator-sdk ## Run operator-sdk scorecard tests.
 	$(OPERATOR_SDK) scorecard bundle --wait-time 120s
 
+.PHONY: verify-signing
+verify-signing: ## Verify the latest published release is Cosign-signed and SBOM-attested.
+	@VERSION=$$(gh release view --repo paperclipinc/paperclip-operator --json tagName --jq .tagName); \
+	IMAGE="ghcr.io/paperclipinc/paperclip-operator:$${VERSION}"; \
+	echo "Verifying $${IMAGE}..."; \
+	cosign verify "$${IMAGE}" \
+	  --certificate-identity-regexp 'https://github.com/paperclipinc/paperclip-operator/.github/workflows/.*' \
+	  --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null || { echo "::error::signature verification failed for $${IMAGE}"; exit 1; }; \
+	echo "Verifying SBOM attestation..."; \
+	cosign verify-attestation "$${IMAGE}" --type spdxjson \
+	  --certificate-identity-regexp 'https://github.com/paperclipinc/paperclip-operator/.github/workflows/.*' \
+	  --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null || { echo "::error::SBOM attestation verification failed for $${IMAGE}"; exit 1; }; \
+	echo "OK: $${IMAGE} is signed and SBOM-attested."
+
 .PHONY: bench
 bench: ## Run benchmarks for resource builders.
 	go test ./internal/resources/ -bench=. -benchmem -run=^$$ -count=1
+
+##@ Conformance
+
+.PHONY: conformance
+conformance: ## Run the full conformance suite. Requires KUBECONFIG to a cluster with the operator installed.
+	cd test/conformance && go test -v -timeout 60m -ginkgo.v ./...
+
+.PHONY: conformance-negative
+conformance-negative: ## Run the negative (schema/CEL deny) conformance category.
+	cd test/conformance && go test -v -timeout 10m -ginkgo.v -ginkgo.focus="negative" ./...
+
+.PHONY: conformance-idempotency
+conformance-idempotency: ## Run the idempotency conformance category.
+	cd test/conformance && go test -v -timeout 30m -ginkgo.v -ginkgo.focus="idempotency" ./...
+
+.PHONY: conformance-upgrade
+conformance-upgrade: ## Run the upgrade-path conformance category.
+	cd test/conformance && go test -v -timeout 60m -ginkgo.v -ginkgo.focus="upgrade-path matrix" ./...
+
+.PHONY: conformance-gitops
+conformance-gitops: ## Run the GitOps coexistence conformance category.
+	cd test/conformance && go test -v -timeout 20m -ginkgo.v -ginkgo.focus="GitOps coexistence" ./...
+
+.PHONY: conformance-failure
+conformance-failure: ## Run the failure-injection conformance category.
+	cd test/conformance && go test -v -timeout 20m -ginkgo.v -ginkgo.focus="failure injection" ./...
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -164,6 +204,32 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
+
+##@ Docs
+
+.PHONY: api-docs
+api-docs: manifests crd-ref-docs ## Regenerate docs/api-reference.md from CRD types.
+	$(CRD_REF_DOCS) \
+	  --config docs-site/crd-ref-docs.yaml \
+	  --source-path api/v1alpha1 \
+	  --output-path docs/api-reference.md \
+	  --renderer markdown
+
+.PHONY: docs-venv
+docs-venv: docs-site/.venv/bin/activate ## Create the docs-site Python virtualenv.
+docs-site/.venv/bin/activate: docs-site/requirements.txt
+	python3 -m venv docs-site/.venv
+	docs-site/.venv/bin/pip install --upgrade pip
+	docs-site/.venv/bin/pip install -r docs-site/requirements.txt
+	touch docs-site/.venv/bin/activate
+
+.PHONY: docs-serve
+docs-serve: docs-venv ## Run the docs site locally (http://127.0.0.1:8000).
+	docs-site/.venv/bin/mkdocs serve -f docs-site/mkdocs.yml
+
+.PHONY: docs-build
+docs-build: docs-venv ## Build the docs site (strict mode -- fails on broken links / warnings).
+	docs-site/.venv/bin/mkdocs build --strict -f docs-site/mkdocs.yml
 
 ##@ Build
 
@@ -246,10 +312,12 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
+CRD_REF_DOCS_VERSION ?= v0.3.0
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
@@ -283,6 +351,11 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(CRD_REF_DOCS) ## Download crd-ref-docs locally if necessary.
+$(CRD_REF_DOCS): $(LOCALBIN)
+	$(call go-install-tool,$(CRD_REF_DOCS),github.com/elastic/crd-ref-docs,$(CRD_REF_DOCS_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

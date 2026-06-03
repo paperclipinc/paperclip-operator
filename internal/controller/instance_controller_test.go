@@ -21,13 +21,16 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
+	"github.com/paperclipinc/paperclip-operator/internal/resources"
 )
 
 var _ = Describe("Instance Controller", func() {
@@ -83,6 +86,58 @@ var _ = Describe("Instance Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
+		})
+	})
+
+	Context("When the instance is suspended", func() {
+		const suspendedName = "suspended-resource"
+
+		ctx := context.Background()
+		nn := types.NamespacedName{Name: suspendedName, Namespace: "default"}
+
+		AfterEach(func() {
+			resource := &paperclipv1alpha1.Instance{}
+			if err := k8sClient.Get(ctx, nn, resource); err == nil {
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			}
+		})
+
+		It("scales the StatefulSet to zero and reports the Suspended phase", func() {
+			By("creating a suspended Instance with replicas=3")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: suspendedName, Namespace: "default"},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:        paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Suspended:    true,
+					Availability: paperclipv1alpha1.AvailabilitySpec{Replicas: resources.Ptr(int32(3))},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			controllerReconciler := &InstanceReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("reconciling twice to pass the finalizer requeue")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying the StatefulSet has 0 replicas")
+			sts := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, nn, sts)).To(Succeed())
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(0)))
+
+			By("verifying the Suspended phase and condition")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(paperclipv1alpha1.PhaseSuspended))
+			cond := meta.FindStatusCondition(updated.Status.Conditions, ConditionSuspended)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		})
 	})
 })

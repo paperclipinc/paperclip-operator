@@ -1,0 +1,70 @@
+processor:
+  ignoreTypes:
+    - "(.*)List$"
+    - "(.*)Status$"
+  ignoreFields:
+    - "status$"
+    - "TypeMeta$"
+
+render:
+  kubernetesVersion: 1.33
+  knownTypes:
+    - name: Quantity
+      package: k8s.io/apimachinery/pkg/api/resource
+      link: https://pkg.go.dev/k8s.io/apimachinery/pkg/api/resource#Quantity
+    - name: ObjectMeta
+      package: k8s.io/apimachinery/pkg/apis/meta/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#objectmeta-v1-meta
+    - name: Condition
+      package: k8s.io/apimachinery/pkg/apis/meta/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#condition-v1-meta
+    - name: Time
+      package: k8s.io/apimachinery/pkg/apis/meta/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#time-v1-meta
+    - name: LocalObjectReference
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core
+    - name: SecretKeySelector
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core
+    - name: Container
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#container-v1-core
+    - name: Volume
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#volume-v1-core
+    - name: VolumeMount
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#volumemount-v1-core
+    - name: Toleration
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#toleration-v1-core
+    - name: Affinity
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#affinity-v1-core
+    - name: TopologySpreadConstraint
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#topologyspreadconstraint-v1-core
+    - name: EnvVar
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#envvar-v1-core
+    - name: EnvFromSource
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#envfromsource-v1-core
+    - name: ResourceRequirements
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core
+    - name: PodSecurityContext
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#podsecuritycontext-v1-core
+    - name: SecurityContext
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#securitycontext-v1-core
+    - name: PersistentVolumeAccessMode
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#persistentvolumeclaimspec-v1-core
+    - name: PullPolicy
+      package: k8s.io/api/core/v1
+      link: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#-strong-properties-strong-container-v1-core
+  markdownDisabled: false
+  format: markdown
