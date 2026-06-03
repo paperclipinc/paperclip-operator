@@ -167,6 +167,32 @@ verify-signing: ## Verify the latest published release is Cosign-signed and SBOM
 bench: ## Run benchmarks for resource builders.
 	go test ./internal/resources/ -bench=. -benchmem -run=^$$ -count=1
 
+##@ Conformance
+
+.PHONY: conformance
+conformance: ## Run the full conformance suite. Requires KUBECONFIG to a cluster with the operator installed.
+	cd test/conformance && go test -v -timeout 60m -ginkgo.v ./...
+
+.PHONY: conformance-negative
+conformance-negative: ## Run the negative (schema/CEL deny) conformance category.
+	cd test/conformance && go test -v -timeout 10m -ginkgo.v -ginkgo.focus="negative" ./...
+
+.PHONY: conformance-idempotency
+conformance-idempotency: ## Run the idempotency conformance category.
+	cd test/conformance && go test -v -timeout 30m -ginkgo.v -ginkgo.focus="idempotency" ./...
+
+.PHONY: conformance-upgrade
+conformance-upgrade: ## Run the upgrade-path conformance category.
+	cd test/conformance && go test -v -timeout 60m -ginkgo.v -ginkgo.focus="upgrade-path matrix" ./...
+
+.PHONY: conformance-gitops
+conformance-gitops: ## Run the GitOps coexistence conformance category.
+	cd test/conformance && go test -v -timeout 20m -ginkgo.v -ginkgo.focus="GitOps coexistence" ./...
+
+.PHONY: conformance-failure
+conformance-failure: ## Run the failure-injection conformance category.
+	cd test/conformance && go test -v -timeout 20m -ginkgo.v -ginkgo.focus="failure injection" ./...
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run

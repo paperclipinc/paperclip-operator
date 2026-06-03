@@ -1,0 +1,58 @@
+name: Conformance
+
+on:
+  schedule:
+    - cron: '0 4 * * *'    # 04:00 UTC nightly
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'test/conformance/**'
+      - 'internal/**'
+      - 'api/**'
+      - '.github/workflows/conformance.yaml'
+  workflow_dispatch:
+
+jobs:
+  negative:
+    name: Negative (schema and CEL deny paths)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: paperclip-conformance
+      - name: Install CRDs
+        run: make install
+      - name: Run negative conformance
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+        run: make conformance-negative
+
+  idempotency:
+    name: Idempotency
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: paperclip-conformance
+      - name: Build and load operator image
+        run: |
+          make docker-build IMG=paperclip-operator:dev
+          kind load docker-image paperclip-operator:dev --name paperclip-conformance
+      - name: Deploy operator
+        run: make deploy IMG=paperclip-operator:dev
+      - name: Run idempotency conformance
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+        run: make conformance-idempotency

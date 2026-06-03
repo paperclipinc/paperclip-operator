@@ -1,0 +1,36 @@
+apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata:
+  name: conf-maximal
+spec:
+  image:
+    repository: ghcr.io/paperclipinc/paperclip
+    tag: v1.0.0
+  deployment:
+    mode: authenticated
+    exposure: private
+  database:
+    mode: managed
+  redis:
+    mode: managed
+  storage:
+    persistence:
+      enabled: true
+      size: 5Gi
+  security:
+    rbac:
+      create: true
+    networkPolicy:
+      enabled: true
+  availability:
+    replicas: 2
+    podDisruptionBudget:
+      enabled: true
+      maxUnavailable: 1
+  observability:
+    metrics:
+      enabled: true
+      prometheusRule:
+        enabled: true
+      grafanaDashboard:
+        enabled: true

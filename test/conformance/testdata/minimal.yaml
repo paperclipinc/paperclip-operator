@@ -1,0 +1,13 @@
+apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata:
+  name: conf-minimal
+spec:
+  image:
+    tag: v1.0.0
+  database:
+    mode: managed
+  storage:
+    persistence:
+      enabled: true
+      size: 1Gi
