@@ -302,6 +302,9 @@ spec:
                 serviceAccountName: paperclip-operator-controller-manager
                 terminationGracePeriodSeconds: 10
     strategy: deployment
+  relatedImages:
+    - name: paperclip-operator
+      image: ghcr.io/paperclipinc/paperclip-operator:v0.1.0
   installModes:
     - supported: true
       type: OwnNamespace
