@@ -1,0 +1,17 @@
+apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata:
+  name: conf-minimal
+spec:
+  image:
+    tag: v1.0.0
+  # Embedded (PGlite) database keeps the instance single-pod: no managed
+  # PostgreSQL StatefulSet to provision, so the operator settles its owned
+  # resources quickly on a tiny kind cluster. Conformance here is about
+  # reconcile idempotency, not heavy database bring-up.
+  database:
+    mode: embedded
+  storage:
+    persistence:
+      enabled: true
+      size: 1Gi

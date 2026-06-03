@@ -1,0 +1,50 @@
+name: Docs Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'api/v1alpha1/**'
+      - '.github/workflows/docs.yaml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - 'api/v1alpha1/**'
+      - '.github/workflows/docs.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build docs site (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: docs-site/requirements.txt
+
+      - name: Regenerate API reference and verify it is committed
+        run: |
+          make api-docs
+          if ! git diff --quiet -- docs/api-reference.md; then
+            echo "::error::docs/api-reference.md is out of date. Run 'make api-docs' and commit the result."
+            git diff -- docs/api-reference.md
+            exit 1
+          fi
+
+      - name: Build docs site (strict)
+        run: make docs-build

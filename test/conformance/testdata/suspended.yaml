@@ -1,0 +1,14 @@
+apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata:
+  name: conf-suspended
+spec:
+  image:
+    tag: v1.0.0
+  suspended: true
+  database:
+    mode: managed
+  storage:
+    persistence:
+      enabled: true
+      size: 1Gi

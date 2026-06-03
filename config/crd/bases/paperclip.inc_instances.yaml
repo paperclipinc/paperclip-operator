@@ -5615,6 +5615,49 @@ spec:
                         default: false
                         description: Enabled controls whether metrics are exposed.
                         type: boolean
+                      grafanaDashboard:
+                        description: GrafanaDashboard configures auto-provisioned
+                          Grafana dashboard ConfigMaps.
+                        properties:
+                          enabled:
+                            default: false
+                            description: Enabled enables Grafana dashboard ConfigMap
+                              creation.
+                            type: boolean
+                          folder:
+                            default: Paperclip
+                            description: Folder is the Grafana folder to place the
+                              dashboards in.
+                            type: string
+                          labels:
+                            additionalProperties:
+                              type: string
+                            description: 'Labels to add to the dashboard ConfigMaps
+                              (in addition to grafana_dashboard: "1").'
+                            type: object
+                        type: object
+                      prometheusRule:
+                        description: |-
+                          PrometheusRule configures an auto-provisioned PrometheusRule with default
+                          operator alerts (reconcile errors, instance not-ready, restart rate).
+                        properties:
+                          enabled:
+                            default: false
+                            description: Enabled enables PrometheusRule creation with
+                              operator alerts.
+                            type: boolean
+                          labels:
+                            additionalProperties:
+                              type: string
+                            description: Labels to add to the PrometheusRule (e.g.
+                              for Prometheus rule selector matching).
+                            type: object
+                          runbookBaseURL:
+                            default: https://paperclip.inc/docs/operators/paperclip/runbooks
+                            description: RunbookBaseURL is the base URL for alert
+                              runbook links.
+                            type: string
+                        type: object
                       serviceMonitor:
                         description: ServiceMonitor enables creating a Prometheus
                           ServiceMonitor.
@@ -6448,6 +6491,21 @@ spec:
                         type: object
                     type: object
                 type: object
+              shareProcessNamespace:
+                default: true
+                description: |-
+                  ShareProcessNamespace enables PID namespace sharing between all containers
+                  in the pod. When true, the infrastructure (pause) container becomes PID 1
+                  and reaps zombie processes, which prevents accumulation of defunct helper
+                  processes (git, plugins, shells) under a Node.js server that does not call
+                  waitpid(). Defaults to true.
+
+                  Security note: enabling this lets every container in the pod see and signal
+                  every other container's processes. A compromised sidecar could send signals
+                  to the server and vice versa. Set to false to keep per-container PID
+                  isolation; you are then responsible for reaping zombies (e.g. by baking
+                  tini or dumb-init into the image).
+                type: boolean
               sidecars:
                 description: Sidecars specifies additional sidecar containers.
                 items:
@@ -7908,6 +7966,13 @@ spec:
                         type: string
                     type: object
                 type: object
+              suspended:
+                default: false
+                description: |-
+                  Suspended scales the workload to zero replicas when true. Non-runtime
+                  resources (Service, ConfigMap, RBAC, NetworkPolicy, PVC) remain fully
+                  managed. Set to false to resume normal operation.
+                type: boolean
             type: object
           status:
             description: InstanceStatus defines the observed state of Instance.
@@ -8020,6 +8085,10 @@ spec:
                     type: string
                   databaseStatefulSet:
                     type: string
+                  grafanaDashboardInstance:
+                    type: string
+                  grafanaDashboardOperator:
+                    type: string
                   httpRoute:
                     type: string
                   ingress:
@@ -8027,6 +8096,8 @@ spec:
                   networkPolicy:
                     type: string
                   persistentVolumeClaim:
+                    type: string
+                  prometheusRule:
                     type: string
                   redisPVC:
                     type: string
@@ -8058,6 +8129,7 @@ spec:
                 - BackingUp
                 - Restoring
                 - Updating
+                - Suspended
                 type: string
               restore:
                 description: Restore tracks the state of the latest restore operation.

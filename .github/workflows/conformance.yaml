@@ -1,0 +1,175 @@
+name: Conformance
+
+on:
+  schedule:
+    - cron: '0 4 * * *'    # 04:00 UTC nightly
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'test/conformance/**'
+      - 'internal/**'
+      - 'api/**'
+      - '.github/workflows/conformance.yaml'
+  workflow_dispatch:
+
+jobs:
+  negative:
+    name: Negative (schema and CEL deny paths)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: paperclip-conformance
+      - name: Install CRDs
+        run: make install
+      - name: Run negative conformance
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+        run: make conformance-negative
+
+  # Advisory on PRs until the kind conformance harness is verified stable for
+  # paperclip's managed-DB workload; flip continue-on-error off once green.
+  # See https://github.com/paperclipinc/paperclip-operator/issues (conformance
+  # harness hardening follow-up).
+  # These jobs build/load the operator image, deploy the controller-manager, and
+  # run operator-dependent conformance categories on kind. The Negative job
+  # above is API-server-only and stays required/blocking.
+  idempotency:
+    name: Idempotency
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: paperclip-conformance
+      - name: Build and load operator image
+        run: |
+          make docker-build IMG=paperclip-operator:dev
+          kind load docker-image paperclip-operator:dev --name paperclip-conformance
+      - name: Deploy operator
+        run: make deploy IMG=paperclip-operator:dev
+      - name: Wait for operator to be Available
+        # make deploy only applies manifests and returns immediately; the
+        # controller-manager Pod still has to pull its image, start, and win
+        # leader election before it reconciles anything. Block here until the
+        # Deployment is Available so the conformance suite never races the
+        # operator. Mirrors openclaw-operator's `helm install --wait`.
+        run: |
+          kubectl rollout status \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=10m
+          kubectl wait --for=condition=Available \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=5m
+      - name: Run idempotency conformance
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+        run: make conformance-idempotency
+
+  gitops-coexistence:
+    name: GitOps coexistence
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: paperclip-conformance
+      - name: Build and load operator image
+        run: |
+          make docker-build IMG=paperclip-operator:dev
+          kind load docker-image paperclip-operator:dev --name paperclip-conformance
+      - name: Deploy operator
+        run: make deploy IMG=paperclip-operator:dev
+      - name: Wait for operator to be Available
+        run: |
+          kubectl rollout status \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=10m
+          kubectl wait --for=condition=Available \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=5m
+      - name: Run gitops coexistence conformance
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+        run: make conformance-gitops
+
+  failure-modes:
+    name: Failure modes
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: paperclip-conformance
+      - name: Build and load operator image
+        run: |
+          make docker-build IMG=paperclip-operator:dev
+          kind load docker-image paperclip-operator:dev --name paperclip-conformance
+      - name: Deploy operator
+        run: make deploy IMG=paperclip-operator:dev
+      - name: Wait for operator to be Available
+        run: |
+          kubectl rollout status \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=10m
+          kubectl wait --for=condition=Available \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=5m
+      - name: Run failure-injection conformance
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+        run: make conformance-failure
+
+  upgrade:
+    name: Upgrade path
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: paperclip-conformance
+      - name: Build and load operator image
+        run: |
+          make docker-build IMG=paperclip-operator:dev
+          kind load docker-image paperclip-operator:dev --name paperclip-conformance
+      - name: Deploy operator
+        run: make deploy IMG=paperclip-operator:dev
+      - name: Wait for operator to be Available
+        run: |
+          kubectl rollout status \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=10m
+          kubectl wait --for=condition=Available \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=5m
+      - name: Run upgrade-path conformance
+        env:
+          KUBECONFIG: /home/runner/.kube/config
+        run: make conformance-upgrade

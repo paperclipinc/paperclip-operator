@@ -1,0 +1,902 @@
+# API Reference
+
+## Packages
+- [paperclip.inc/v1alpha1](#paperclipincv1alpha1)
+
+
+## paperclip.inc/v1alpha1
+
+Package v1alpha1 contains API Schema definitions for the paperclip v1alpha1 API group.
+
+### Resource Types
+- [Instance](#instance)
+
+
+
+#### AdaptersSpec
+
+
+
+AdaptersSpec configures agent runtime adapters.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiKeysSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | APIKeys references Secrets containing LLM provider API keys.<br />The Secret should contain keys like ANTHROPIC_API_KEY, OPENAI_API_KEY, etc. |  | Optional: \{\} <br /> |
+| `cloudSandbox` _[CloudSandboxSpec](#cloudsandboxspec)_ | CloudSandbox configures cloud-based agent execution in isolated Kubernetes pods. |  | Optional: \{\} <br /> |
+| `managedInferenceSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | ManagedInferenceSecretRef references a Secret containing platform LLM API keys.<br />The Secret should contain one or more of these keys:<br />  PAPERCLIP_MANAGED_ANTHROPIC_API_KEY<br />  PAPERCLIP_MANAGED_OPENAI_API_KEY<br />  PAPERCLIP_MANAGED_GEMINI_API_KEY<br />  PAPERCLIP_MANAGED_OPENROUTER_API_KEY<br />For backward compatibility, PAPERCLIP_MANAGED_INFERENCE_API_KEY is also supported. |  | Optional: \{\} <br /> |
+| `managedInferenceProvider` _string_ | ManagedInferenceProvider is the LLM provider for the legacy single-key mode.<br />Ignored when per-provider keys are used. | anthropic | Optional: \{\} <br /> |
+| `managedInferenceModel` _string_ | ManagedInferenceModel is the default model for managed inference. | claude-sonnet-4-6 | Optional: \{\} <br /> |
+
+
+#### AdminUserSpec
+
+
+
+AdminUserSpec configures the initial admin user for automatic bootstrap.
+
+
+
+_Appears in:_
+- [AuthSpec](#authspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `email` _string_ | Email is the admin user's email address (used as login). |  |  |
+| `name` _string_ | Name is the admin user's display name. | Admin | Optional: \{\} <br /> |
+| `passwordSecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | PasswordSecretRef references a Secret containing the admin password. |  |  |
+
+
+#### AuthEmailSpec
+
+
+
+AuthEmailSpec configures email delivery for auth flows.
+
+
+
+_Appears in:_
+- [AuthSpec](#authspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `resendAPIKeySecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | ResendAPIKeySecretRef references a Secret key containing the Resend API key. |  | Optional: \{\} <br /> |
+| `from` _string_ | From is the sender address for outbound emails (e.g. "Paperclip <noreply@example.com>"). |  | Optional: \{\} <br /> |
+| `verificationRequired` _boolean_ | VerificationRequired requires email verification before a session can be created. |  | Optional: \{\} <br /> |
+
+
+#### AuthSpec
+
+
+
+AuthSpec configures authentication.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `secretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | SecretRef references a Secret containing the BETTER_AUTH_SECRET key.<br />Required when deployment mode is "authenticated". |  | Optional: \{\} <br /> |
+| `adminUser` _[AdminUserSpec](#adminuserspec)_ | AdminUser configures the initial admin user that is created automatically<br />when the instance is first deployed. If not set, the instance will show<br />a setup screen requiring manual bootstrap. |  | Optional: \{\} <br /> |
+| `email` _[AuthEmailSpec](#authemailspec)_ | Email configures email sending for verification and password reset. |  | Optional: \{\} <br /> |
+| `google` _[OAuthProviderSpec](#oauthproviderspec)_ | Google configures Google OAuth sign-in.<br />The referenced Secret must contain GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET keys. |  | Optional: \{\} <br /> |
+| `apple` _[OAuthProviderSpec](#oauthproviderspec)_ | Apple configures Apple OAuth sign-in.<br />The referenced Secret must contain APPLE_CLIENT_ID and APPLE_CLIENT_SECRET keys. |  | Optional: \{\} <br /> |
+
+
+#### AutoScalingSpec
+
+
+
+AutoScalingSpec configures a HorizontalPodAutoscaler.
+
+
+
+_Appears in:_
+- [AvailabilitySpec](#availabilityspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether an HPA is created. |  |  |
+| `minReplicas` _integer_ | MinReplicas is the minimum number of replicas. | 1 | Optional: \{\} <br /> |
+| `maxReplicas` _integer_ | MaxReplicas is the maximum number of replicas. | 3 | Optional: \{\} <br /> |
+| `targetCPUUtilizationPercentage` _integer_ | TargetCPUUtilizationPercentage is the target CPU utilization for scaling. | 80 | Optional: \{\} <br /> |
+| `targetMemoryUtilizationPercentage` _integer_ | TargetMemoryUtilizationPercentage is the target memory utilization for scaling. |  | Optional: \{\} <br /> |
+
+
+#### AutoUpdateSpec
+
+
+
+AutoUpdateSpec configures automatic image update polling.
+
+
+
+_Appears in:_
+- [ImageSpec](#imagespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether auto-update polling is active. | false | Optional: \{\} <br /> |
+| `interval` _string_ | Interval is the polling interval (e.g. "5m", "1h"). Minimum is 1m. | 5m | Pattern: `^\d+(s\|m\|h)$` <br />Optional: \{\} <br /> |
+
+
+#### AvailabilitySpec
+
+
+
+AvailabilitySpec configures scaling and pod scheduling.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `replicas` _integer_ | Replicas is the desired number of Paperclip server pods.<br />Ignored when autoScaling is enabled (the HPA manages replicas). | 1 | Minimum: 1 <br />Optional: \{\} <br /> |
+| `podDisruptionBudget` _[PDBSpec](#pdbspec)_ | PodDisruptionBudget configures the PDB. |  | Optional: \{\} <br /> |
+| `autoScaling` _[AutoScalingSpec](#autoscalingspec)_ | AutoScaling configures the HorizontalPodAutoscaler. |  | Optional: \{\} <br /> |
+| `nodeSelector` _object (keys:string, values:string)_ | NodeSelector specifies node selection constraints. |  | Optional: \{\} <br /> |
+| `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#toleration-v1-core) array_ | Tolerations specifies pod tolerations. |  | Optional: \{\} <br /> |
+| `affinity` _[Affinity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#affinity-v1-core)_ | Affinity specifies pod affinity rules. |  | Optional: \{\} <br /> |
+| `topologySpreadConstraints` _[TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#topologyspreadconstraint-v1-core) array_ | TopologySpreadConstraints specifies topology spread constraints. |  | Optional: \{\} <br /> |
+
+
+#### BackupS3Spec
+
+
+
+BackupS3Spec configures S3 backup destination.
+
+
+
+_Appears in:_
+- [BackupSpec](#backupspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `bucket` _string_ | Bucket is the S3 bucket name. |  |  |
+| `path` _string_ | Path is the S3 key prefix for backups. |  | Optional: \{\} <br /> |
+| `region` _string_ | Region is the S3 region. |  | Optional: \{\} <br /> |
+| `endpoint` _string_ | Endpoint is the S3-compatible endpoint URL. |  | Optional: \{\} <br /> |
+| `credentialsSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | CredentialsSecretRef references a Secret containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. |  | Optional: \{\} <br /> |
+
+
+#### BackupSpec
+
+
+
+BackupSpec configures periodic backup to S3.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `schedule` _string_ | Schedule is a cron expression for backup scheduling. |  |  |
+| `s3` _[BackupS3Spec](#backups3spec)_ | S3 configures the S3 backup destination. Uses ObjectStorage config if not specified. |  | Optional: \{\} <br /> |
+| `retentionDays` _integer_ | RetentionDays specifies how many days to retain backups. | 30 | Optional: \{\} <br /> |
+
+
+#### CloudSandboxPersistenceSpec
+
+
+
+CloudSandboxPersistenceSpec configures PVC-backed persistent workspaces.
+
+
+
+_Appears in:_
+- [CloudSandboxSpec](#cloudsandboxspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled enables PVC-backed workspaces instead of emptyDir. |  |  |
+| `storageClass` _string_ | StorageClass is the storage class for workspace PVCs. |  | Optional: \{\} <br /> |
+| `size` _string_ | Size is the storage size for workspace PVCs (e.g. "10Gi"). | 10Gi | Optional: \{\} <br /> |
+
+
+#### CloudSandboxSpec
+
+
+
+CloudSandboxSpec configures cloud sandbox execution for agent runtimes.
+
+
+
+_Appears in:_
+- [AdaptersSpec](#adaptersspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether cloud sandbox execution is available. | false | Optional: \{\} <br /> |
+| `defaultImage` _string_ | DefaultImage is the default agent runtime container image. | ghcr.io/paperclipinc/agent-multi:latest | Optional: \{\} <br /> |
+| `namespace` _string_ | Namespace is the namespace for sandbox pods. Defaults to the instance namespace. |  | Optional: \{\} <br /> |
+| `idleTimeoutMin` _integer_ | IdleTimeoutMin is how long (in minutes) a sandbox pod can be idle before being reaped. | 30 | Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies default compute resources for sandbox pods. |  | Optional: \{\} <br /> |
+| `persistence` _[CloudSandboxPersistenceSpec](#cloudsandboxpersistencespec)_ | Persistence configures PVC-backed persistent workspaces for sandbox pods. |  | Optional: \{\} <br /> |
+| `multiNamespace` _boolean_ | MultiNamespace enables per-company namespace isolation for sandbox pods.<br />When enabled, each company's sandbox pods run in a dedicated namespace. |  | Optional: \{\} <br /> |
+| `inferenceProxy` _[InferenceProxySpec](#inferenceproxyspec)_ | InferenceProxy configures the transparent inference metering proxy. |  | Optional: \{\} <br /> |
+| `resourceTiers` _object (keys:string, values:[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core))_ | ResourceTiers defines named resource presets for sandbox pods. |  | Optional: \{\} <br /> |
+
+
+#### ConnectionsSpec
+
+
+
+ConnectionsSpec configures third-party OAuth provider credentials.
+The operator injects credentials as PAPERCLIP_OAUTH_CREDENTIALS from
+the referenced Secret, enabling the Paperclip connections system to
+manage OAuth flows and token lifecycle for external services.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `credentialsSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | CredentialsSecretRef references a Secret containing OAuth client credentials.<br />The Secret must contain a key (default "PAPERCLIP_OAUTH_CREDENTIALS") whose<br />value is a JSON object mapping provider IDs to \{clientId, clientSecret\} pairs.<br />Example: \{"github":\{"clientId":"...","clientSecret":"..."\},"slack":\{"clientId":"...","clientSecret":"..."\}\} |  |  |
+| `credentialsKey` _string_ | CredentialsKey is the key within the Secret that holds the JSON credentials.<br />Defaults to "PAPERCLIP_OAUTH_CREDENTIALS". | PAPERCLIP_OAUTH_CREDENTIALS | Optional: \{\} <br /> |
+| `providersConfigRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | ProvidersConfigRef optionally references a ConfigMap containing a<br />PAPERCLIP_OAUTH_PROVIDERS key with a JSON provider catalog to extend<br />or override the built-in provider definitions at runtime. |  | Optional: \{\} <br /> |
+
+
+#### DatabaseSpec
+
+
+
+DatabaseSpec configures PostgreSQL.
+For high-availability production deployments, use mode "external" with a managed
+PostgreSQL service (e.g., Amazon RDS, Cloud SQL). The "managed" mode provides a
+single-instance PostgreSQL suitable for development and small deployments.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mode` _string_ | Mode selects the database mode: "embedded" (PGlite), "external" (connection string), or "managed" (operator-managed StatefulSet). | managed | Enum: [embedded external managed] <br />Optional: \{\} <br /> |
+| `externalURL` _string_ | ExternalURL is the PostgreSQL connection string for external mode.<br />WARNING: This value is stored in plaintext in the CRD spec (etcd). If the URL contains<br />credentials, use ExternalURLSecretRef instead to reference a Secret. |  | Optional: \{\} <br /> |
+| `externalURLSecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | ExternalURLSecretRef references a Secret containing the DATABASE_URL key. |  | Optional: \{\} <br /> |
+| `managed` _[ManagedDatabaseSpec](#manageddatabasespec)_ | Managed configures the operator-managed PostgreSQL StatefulSet. |  | Optional: \{\} <br /> |
+
+
+#### DeploymentSpec
+
+
+
+DeploymentSpec controls deployment mode and exposure.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mode` _string_ | Mode sets the deployment mode: "open" (no auth), "authenticated" (login required), or "single-tenant". | authenticated | Enum: [open authenticated single-tenant] <br />Optional: \{\} <br /> |
+| `exposure` _string_ | Exposure controls network exposure: "private" (ClusterIP only) or "public" (Ingress/LoadBalancer). | private | Enum: [private public] <br />Optional: \{\} <br /> |
+| `publicURL` _string_ | PublicURL is the externally-reachable URL for the Paperclip instance.<br />Required when exposure is "public". |  | Optional: \{\} <br /> |
+| `allowedHostnames` _string array_ | AllowedHostnames is a list of allowed hostnames for CORS. |  | Optional: \{\} <br /> |
+
+
+#### GrafanaDashboardSpec
+
+
+
+GrafanaDashboardSpec configures auto-provisioned Grafana dashboard ConfigMaps.
+
+
+
+_Appears in:_
+- [MetricsSpec](#metricsspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled enables Grafana dashboard ConfigMap creation. | false | Optional: \{\} <br /> |
+| `labels` _object (keys:string, values:string)_ | Labels to add to the dashboard ConfigMaps (in addition to grafana_dashboard: "1"). |  | Optional: \{\} <br /> |
+| `folder` _string_ | Folder is the Grafana folder to place the dashboards in. | Paperclip | Optional: \{\} <br /> |
+
+
+#### HTTPRouteParentRef
+
+
+
+HTTPRouteParentRef identifies a Gateway (or other parent) that the HTTPRoute attaches to.
+
+
+
+_Appears in:_
+- [HTTPRouteSpec](#httproutespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the name of the Gateway. |  |  |
+| `namespace` _string_ | Namespace is the namespace of the Gateway.<br />Defaults to the same namespace as the HTTPRoute. |  | Optional: \{\} <br /> |
+| `sectionName` _string_ | SectionName is the name of a specific listener on the Gateway to attach to. |  | Optional: \{\} <br /> |
+
+
+#### HTTPRouteSpec
+
+
+
+HTTPRouteSpec configures a Gateway API HTTPRoute.
+
+
+
+_Appears in:_
+- [NetworkingSpec](#networkingspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether an HTTPRoute is created. | false | Optional: \{\} <br /> |
+| `parentRefs` _[HTTPRouteParentRef](#httprouteparentref) array_ | ParentRefs specifies the Gateways this HTTPRoute attaches to.<br />Each ref identifies a Gateway by name (and optionally namespace and sectionName). |  | Optional: \{\} <br /> |
+| `hostnames` _string array_ | Hostnames specifies the hostnames matched by this HTTPRoute. |  | Optional: \{\} <br /> |
+| `annotations` _object (keys:string, values:string)_ | Annotations specifies additional annotations for the HTTPRoute. |  | Optional: \{\} <br /> |
+
+
+#### HeartbeatSpec
+
+
+
+HeartbeatSpec configures the agent heartbeat scheduler.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether the heartbeat scheduler runs. Defaults to true. | true | Optional: \{\} <br /> |
+| `intervalMS` _integer_ | IntervalMS sets the heartbeat interval in milliseconds. | 60000 | Optional: \{\} <br /> |
+
+
+#### ImageSpec
+
+
+
+ImageSpec configures the container image.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `repository` _string_ | Repository is the container image repository. | ghcr.io/paperclipinc/paperclip | Optional: \{\} <br /> |
+| `tag` _string_ | Tag is the container image tag. Either tag or digest must be set; there is<br />no default, because pinning to a mutable tag like :latest can silently pull<br />a broken upstream build. |  | Optional: \{\} <br /> |
+| `digest` _string_ | Digest overrides the tag with an image digest (e.g. sha256:abc...). |  | Optional: \{\} <br /> |
+| `pullPolicy` _[PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#pullpolicy-v1-core)_ | PullPolicy specifies the image pull policy. | IfNotPresent | Enum: [Always Never IfNotPresent] <br />Optional: \{\} <br /> |
+| `pullSecrets` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core) array_ | PullSecrets specifies image pull secrets. |  | Optional: \{\} <br /> |
+| `autoUpdate` _[AutoUpdateSpec](#autoupdatespec)_ | AutoUpdate enables automatic image updates by polling the registry for new digests. |  | Optional: \{\} <br /> |
+
+
+#### InferenceProxySpec
+
+
+
+InferenceProxySpec configures the transparent inference metering proxy.
+
+
+
+_Appears in:_
+- [CloudSandboxSpec](#cloudsandboxspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled enables the inference proxy sidecar for metered API access. |  |  |
+| `image` _string_ | Image is the inference proxy container image. |  | Optional: \{\} <br /> |
+| `port` _integer_ | Port is the port the proxy listens on. | 8090 | Optional: \{\} <br /> |
+
+
+#### IngressSpec
+
+
+
+IngressSpec configures the Kubernetes Ingress.
+
+
+
+_Appears in:_
+- [NetworkingSpec](#networkingspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether an Ingress is created. | false | Optional: \{\} <br /> |
+| `ingressClassName` _string_ | IngressClassName specifies the Ingress class name. |  | Optional: \{\} <br /> |
+| `hosts` _string array_ | Hosts specifies the Ingress hostnames. |  | Optional: \{\} <br /> |
+| `tls` _[IngressTLSSpec](#ingresstlsspec) array_ | TLS configures TLS for the Ingress. |  | Optional: \{\} <br /> |
+| `annotations` _object (keys:string, values:string)_ | Annotations specifies additional annotations for the Ingress.<br />Tip: Add WebSocket support annotations for your ingress controller here<br />(e.g., nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"). |  | Optional: \{\} <br /> |
+
+
+#### IngressTLSSpec
+
+
+
+IngressTLSSpec configures TLS for an Ingress host.
+
+
+
+_Appears in:_
+- [IngressSpec](#ingressspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `hosts` _string array_ | Hosts specifies the TLS hostnames. |  |  |
+| `secretName` _string_ | SecretName is the name of the TLS secret. |  |  |
+
+
+#### Instance
+
+
+
+Instance is the Schema for the instances API.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `paperclip.inc/v1alpha1` | | |
+| `kind` _string_ | `Instance` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[InstanceSpec](#instancespec)_ |  |  |  |
+
+
+
+
+#### InstanceSpec
+
+
+
+InstanceSpec defines the desired state of a Paperclip instance.
+
+
+
+_Appears in:_
+- [Instance](#instance)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `image` _[ImageSpec](#imagespec)_ | Image specifies the Paperclip container image to deploy. |  | Optional: \{\} <br /> |
+| `deployment` _[DeploymentSpec](#deploymentspec)_ | Deployment controls the deployment mode and exposure settings. |  | Optional: \{\} <br /> |
+| `database` _[DatabaseSpec](#databasespec)_ | Database configures the PostgreSQL connection. |  | Optional: \{\} <br /> |
+| `auth` _[AuthSpec](#authspec)_ | Auth configures authentication settings. |  | Optional: \{\} <br /> |
+| `secrets` _[SecretsSpec](#secretsspec)_ | Secrets configures the Paperclip secrets management system. |  | Optional: \{\} <br /> |
+| `storage` _[StorageSpec](#storagespec)_ | Storage configures persistent storage for the Paperclip data directory. |  | Optional: \{\} <br /> |
+| `objectStorage` _[ObjectStorageSpec](#objectstoragespec)_ | ObjectStorage configures S3-compatible object storage for multi-replica deployments. |  | Optional: \{\} <br /> |
+| `redis` _[RedisSpec](#redisspec)_ | Redis configures Redis for rate limiting and caching in multi-replica deployments. |  | Optional: \{\} <br /> |
+| `heartbeat` _[HeartbeatSpec](#heartbeatspec)_ | Heartbeat configures the agent heartbeat scheduler. |  | Optional: \{\} <br /> |
+| `adapters` _[AdaptersSpec](#adaptersspec)_ | Adapters configures agent runtime adapters. |  | Optional: \{\} <br /> |
+| `connections` _[ConnectionsSpec](#connectionsspec)_ | Connections configures third-party OAuth provider credentials for<br />the Paperclip connections system (GitHub, GitLab, Slack, etc.). |  | Optional: \{\} <br /> |
+| `plugins` _[PluginRef](#pluginref) array_ | Plugins lists plugins to install. |  | Optional: \{\} <br /> |
+| `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#envvar-v1-core) array_ | Env specifies additional environment variables for the Paperclip container. |  | Optional: \{\} <br /> |
+| `envFrom` _[EnvFromSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#envfromsource-v1-core) array_ | EnvFrom specifies additional environment variable sources for the Paperclip container. |  | Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies the compute resources for the Paperclip container. |  | Optional: \{\} <br /> |
+| `security` _[SecuritySpec](#securityspec)_ | Security configures pod and container security settings. |  | Optional: \{\} <br /> |
+| `shareProcessNamespace` _boolean_ | ShareProcessNamespace enables PID namespace sharing between all containers<br />in the pod. When true, the infrastructure (pause) container becomes PID 1<br />and reaps zombie processes, which prevents accumulation of defunct helper<br />processes (git, plugins, shells) under a Node.js server that does not call<br />waitpid(). Defaults to true.<br />Security note: enabling this lets every container in the pod see and signal<br />every other container's processes. A compromised sidecar could send signals<br />to the server and vice versa. Set to false to keep per-container PID<br />isolation; you are then responsible for reaping zombies (e.g. by baking<br />tini or dumb-init into the image). | true | Optional: \{\} <br /> |
+| `suspended` _boolean_ | Suspended scales the workload to zero replicas when true. Non-runtime<br />resources (Service, ConfigMap, RBAC, NetworkPolicy, PVC) remain fully<br />managed. Set to false to resume normal operation. | false | Optional: \{\} <br /> |
+| `networking` _[NetworkingSpec](#networkingspec)_ | Networking configures service, ingress, and WebSocket settings. |  | Optional: \{\} <br /> |
+| `observability` _[ObservabilitySpec](#observabilityspec)_ | Observability configures metrics, logging, and monitoring. |  | Optional: \{\} <br /> |
+| `availability` _[AvailabilitySpec](#availabilityspec)_ | Availability configures scaling, PDB, and pod scheduling. |  | Optional: \{\} <br /> |
+| `probes` _[ProbesSpec](#probesspec)_ | Probes configures liveness, readiness, and startup probes. |  | Optional: \{\} <br /> |
+| `backup` _[BackupSpec](#backupspec)_ | Backup configures periodic backup to S3-compatible storage. |  | Optional: \{\} <br /> |
+| `restoreFrom` _string_ | RestoreFrom specifies a remote backup path to restore from on first boot. |  | Optional: \{\} <br /> |
+| `sidecars` _[Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#container-v1-core) array_ | Sidecars specifies additional sidecar containers. |  | Optional: \{\} <br /> |
+| `initContainers` _[Container](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#container-v1-core) array_ | InitContainers specifies additional init containers. |  | Optional: \{\} <br /> |
+| `extraVolumes` _[Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#volume-v1-core) array_ | ExtraVolumes specifies additional volumes to add to the pod. |  | Optional: \{\} <br /> |
+| `extraVolumeMounts` _[VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#volumemount-v1-core) array_ | ExtraVolumeMounts specifies additional volume mounts for the Paperclip container. |  | Optional: \{\} <br /> |
+| `podAnnotations` _object (keys:string, values:string)_ | PodAnnotations specifies additional annotations for the pod template. |  | Optional: \{\} <br /> |
+
+
+#### LoggingSpec
+
+
+
+LoggingSpec configures logging.
+
+
+
+_Appears in:_
+- [ObservabilitySpec](#observabilityspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `level` _string_ | Level sets the log level: "debug", "info", "warn", "error". | info | Enum: [debug info warn error] <br />Optional: \{\} <br /> |
+
+
+#### ManagedDatabaseSpec
+
+
+
+ManagedDatabaseSpec configures the operator-managed PostgreSQL instance.
+
+
+
+_Appears in:_
+- [DatabaseSpec](#databasespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `image` _string_ | Image is the PostgreSQL container image. | postgres:17-alpine | Optional: \{\} <br /> |
+| `storageSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#quantity-resource-api)_ | StorageSize is the PVC size for PostgreSQL data. | 10Gi | Optional: \{\} <br /> |
+| `storageClass` _string_ | StorageClass is the storage class for the PostgreSQL PVC. |  | Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies compute resources for the PostgreSQL container. |  | Optional: \{\} <br /> |
+
+
+#### ManagedRedisSpec
+
+
+
+ManagedRedisSpec configures the operator-managed Redis instance.
+
+
+
+_Appears in:_
+- [RedisSpec](#redisspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `image` _string_ | Image is the Redis container image. | redis:7-alpine | Optional: \{\} <br /> |
+| `storageSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#quantity-resource-api)_ | StorageSize is the PVC size for Redis data. Defaults to 1Gi. | 1Gi | Optional: \{\} <br /> |
+| `storageClass` _string_ | StorageClass is the storage class for the Redis PVC. |  | Optional: \{\} <br /> |
+| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies compute resources for the Redis container. |  | Optional: \{\} <br /> |
+
+
+
+
+#### MetricsSpec
+
+
+
+MetricsSpec configures Prometheus metrics.
+
+
+
+_Appears in:_
+- [ObservabilitySpec](#observabilityspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether metrics are exposed. | false | Optional: \{\} <br /> |
+| `serviceMonitor` _[ServiceMonitorSpec](#servicemonitorspec)_ | ServiceMonitor enables creating a Prometheus ServiceMonitor. |  | Optional: \{\} <br /> |
+| `prometheusRule` _[PrometheusRuleSpec](#prometheusrulespec)_ | PrometheusRule configures an auto-provisioned PrometheusRule with default<br />operator alerts (reconcile errors, instance not-ready, restart rate). |  | Optional: \{\} <br /> |
+| `grafanaDashboard` _[GrafanaDashboardSpec](#grafanadashboardspec)_ | GrafanaDashboard configures auto-provisioned Grafana dashboard ConfigMaps. |  | Optional: \{\} <br /> |
+
+
+#### NetworkPolicySpec
+
+
+
+NetworkPolicySpec configures network isolation.
+
+
+
+_Appears in:_
+- [SecuritySpec](#securityspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether a NetworkPolicy is created. Defaults to true. | true | Optional: \{\} <br /> |
+| `allowIngressCIDRs` _string array_ | AllowIngressCIDRs specifies additional CIDR blocks allowed to reach the Paperclip service. |  | items:Pattern: `^([0-9]\{1,3\}\.)\{3\}[0-9]\{1,3\}/[0-9]\{1,2\}$` <br />Optional: \{\} <br /> |
+| `allowEgressCIDRs` _string array_ | AllowEgressCIDRs specifies additional CIDR blocks the pod can reach. |  | items:Pattern: `^([0-9]\{1,3\}\.)\{3\}[0-9]\{1,3\}/[0-9]\{1,2\}$` <br />Optional: \{\} <br /> |
+
+
+#### NetworkingSpec
+
+
+
+NetworkingSpec configures service and ingress.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `service` _[ServiceSpec](#servicespec)_ | Service configures the Kubernetes Service. |  | Optional: \{\} <br /> |
+| `ingress` _[IngressSpec](#ingressspec)_ | Ingress configures the Kubernetes Ingress. |  | Optional: \{\} <br /> |
+| `httpRoute` _[HTTPRouteSpec](#httproutespec)_ | HTTPRoute configures a Gateway API HTTPRoute.<br />This is an alternative to Ingress for clusters using the Gateway API. |  | Optional: \{\} <br /> |
+
+
+#### OAuthProviderSpec
+
+
+
+OAuthProviderSpec references credentials for a social OAuth provider.
+
+
+
+_Appears in:_
+- [AuthSpec](#authspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `credentialsSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | CredentialsSecretRef references a Secret containing provider-specific OAuth<br />client credentials (e.g. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET). |  |  |
+
+
+#### ObjectStorageSpec
+
+
+
+ObjectStorageSpec configures S3-compatible object storage.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `provider` _string_ | Provider is the S3-compatible provider: "s3", "minio", "r2". |  | Enum: [s3 minio r2] <br /> |
+| `bucket` _string_ | Bucket is the S3 bucket name. |  |  |
+| `region` _string_ | Region is the S3 region. |  | Optional: \{\} <br /> |
+| `endpoint` _string_ | Endpoint is the S3-compatible endpoint URL (for MinIO/R2). |  | Optional: \{\} <br /> |
+| `credentialsSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | CredentialsSecretRef references a Secret containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. |  | Optional: \{\} <br /> |
+
+
+#### ObservabilitySpec
+
+
+
+ObservabilitySpec configures monitoring and logging.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `metrics` _[MetricsSpec](#metricsspec)_ | Metrics configures Prometheus metrics. |  | Optional: \{\} <br /> |
+| `logging` _[LoggingSpec](#loggingspec)_ | Logging configures log level and format. |  | Optional: \{\} <br /> |
+
+
+#### PDBSpec
+
+
+
+PDBSpec configures a PodDisruptionBudget.
+
+
+
+_Appears in:_
+- [AvailabilitySpec](#availabilityspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether a PDB is created. |  |  |
+| `minAvailable` _integer_ | MinAvailable specifies the minimum number of pods that must be available. |  | Optional: \{\} <br /> |
+| `maxUnavailable` _integer_ | MaxUnavailable specifies the maximum number of pods that can be unavailable. |  | Optional: \{\} <br /> |
+
+
+#### PersistenceSpec
+
+
+
+PersistenceSpec configures PVC settings.
+
+
+
+_Appears in:_
+- [StorageSpec](#storagespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether a PVC is created. Defaults to true. | true | Optional: \{\} <br /> |
+| `size` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#quantity-resource-api)_ | Size is the PVC storage size. | 5Gi | Optional: \{\} <br /> |
+| `storageClass` _string_ | StorageClass is the storage class for the PVC. |  | Optional: \{\} <br /> |
+| `accessModes` _[PersistentVolumeAccessMode](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#persistentvolumeaccessmode-v1-core) array_ | AccessModes specifies the PVC access modes. |  | Optional: \{\} <br /> |
+
+
+#### PluginRef
+
+
+
+PluginRef references a Paperclip plugin.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `name` _string_ | Name is the plugin package name. |  |  |
+| `version` _string_ | Version is the plugin version. |  | Optional: \{\} <br /> |
+
+
+#### ProbeSpec
+
+
+
+ProbeSpec configures an individual probe.
+
+
+
+_Appears in:_
+- [ProbesSpec](#probesspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `initialDelaySeconds` _integer_ | InitialDelaySeconds is the number of seconds after the container starts before the probe is initiated. |  | Optional: \{\} <br /> |
+| `periodSeconds` _integer_ | PeriodSeconds is how often (in seconds) to perform the probe. |  | Optional: \{\} <br /> |
+| `timeoutSeconds` _integer_ | TimeoutSeconds is the number of seconds after which the probe times out. |  | Optional: \{\} <br /> |
+| `failureThreshold` _integer_ | FailureThreshold is the number of consecutive failures before the probe is considered failed. |  | Optional: \{\} <br /> |
+| `successThreshold` _integer_ | SuccessThreshold is the number of consecutive successes before the probe is considered successful. |  | Optional: \{\} <br /> |
+
+
+#### ProbesSpec
+
+
+
+ProbesSpec configures health probes.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _string_ | Type specifies the probe mechanism: "auto" (default), "http", or "tcp".<br />"auto" uses HTTP probes in open mode and TCP probes in authenticated/single-tenant mode<br />(where /api/health returns 403 without credentials). | auto | Enum: [auto http tcp] <br />Optional: \{\} <br /> |
+| `liveness` _[ProbeSpec](#probespec)_ | Liveness configures the liveness probe against /api/health. |  | Optional: \{\} <br /> |
+| `readiness` _[ProbeSpec](#probespec)_ | Readiness configures the readiness probe against /api/health. |  | Optional: \{\} <br /> |
+| `startup` _[ProbeSpec](#probespec)_ | Startup configures the startup probe against /api/health. |  | Optional: \{\} <br /> |
+
+
+#### PrometheusRuleSpec
+
+
+
+PrometheusRuleSpec configures an auto-provisioned PrometheusRule.
+
+
+
+_Appears in:_
+- [MetricsSpec](#metricsspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled enables PrometheusRule creation with operator alerts. | false | Optional: \{\} <br /> |
+| `labels` _object (keys:string, values:string)_ | Labels to add to the PrometheusRule (e.g. for Prometheus rule selector matching). |  | Optional: \{\} <br /> |
+| `runbookBaseURL` _string_ | RunbookBaseURL is the base URL for alert runbook links. | https://paperclip.inc/docs/operators/paperclip/runbooks | Optional: \{\} <br /> |
+
+
+#### RBACSpec
+
+
+
+RBACSpec configures ServiceAccount and RBAC.
+
+
+
+_Appears in:_
+- [SecuritySpec](#securityspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `create` _boolean_ | Create controls whether a ServiceAccount is created. Defaults to true. | true | Optional: \{\} <br /> |
+| `serviceAccountAnnotations` _object (keys:string, values:string)_ | ServiceAccountAnnotations specifies additional annotations for the ServiceAccount. |  | Optional: \{\} <br /> |
+
+
+#### RedisSpec
+
+
+
+RedisSpec configures Redis for rate limiting and caching.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mode` _string_ | Mode selects the Redis mode: "managed" (operator-provisioned) or "external" (user-provided URL). | managed | Enum: [managed external] <br />Optional: \{\} <br /> |
+| `externalURL` _string_ | ExternalURL is the Redis connection string for external mode (e.g. "redis://host:6379").<br />WARNING: This value is stored in plaintext in the CRD spec (etcd). If the URL contains<br />credentials, use ExternalURLSecretRef instead to reference a Secret. |  | Optional: \{\} <br /> |
+| `externalURLSecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | ExternalURLSecretRef references a Secret key containing the Redis URL. |  | Optional: \{\} <br /> |
+| `managed` _[ManagedRedisSpec](#managedredisspec)_ | Managed configures the operator-managed Redis instance. |  | Optional: \{\} <br /> |
+
+
+#### SecretsSpec
+
+
+
+SecretsSpec configures Paperclip's built-in secrets management.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `masterKeySecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | MasterKeySecretRef references a Secret containing the master encryption key. |  | Optional: \{\} <br /> |
+| `strictMode` _boolean_ | StrictMode requires all sensitive values to use encrypted references. |  | Optional: \{\} <br /> |
+
+
+#### SecuritySpec
+
+
+
+SecuritySpec configures security settings.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `podSecurityContext` _[PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#podsecuritycontext-v1-core)_ | PodSecurityContext specifies security settings for the pod. |  | Optional: \{\} <br /> |
+| `containerSecurityContext` _[SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#securitycontext-v1-core)_ | ContainerSecurityContext specifies security settings for the Paperclip container. |  | Optional: \{\} <br /> |
+| `networkPolicy` _[NetworkPolicySpec](#networkpolicyspec)_ | NetworkPolicy configures network isolation. |  | Optional: \{\} <br /> |
+| `rbac` _[RBACSpec](#rbacspec)_ | RBAC configures ServiceAccount and RBAC settings. |  | Optional: \{\} <br /> |
+
+
+#### ServiceMonitorSpec
+
+
+
+ServiceMonitorSpec configures a Prometheus ServiceMonitor.
+
+
+
+_Appears in:_
+- [MetricsSpec](#metricsspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether a ServiceMonitor is created. |  |  |
+| `interval` _string_ | Interval specifies the scrape interval. | 30s | Optional: \{\} <br /> |
+
+
+#### ServiceSpec
+
+
+
+ServiceSpec configures the Kubernetes Service.
+
+
+
+_Appears in:_
+- [NetworkingSpec](#networkingspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `type` _[ServiceType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#servicetype-v1-core)_ | Type is the Kubernetes Service type. | ClusterIP | Enum: [ClusterIP LoadBalancer NodePort] <br />Optional: \{\} <br /> |
+| `port` _integer_ | Port is the service port. Defaults to 3100 (Paperclip's default). | 3100 | Optional: \{\} <br /> |
+| `annotations` _object (keys:string, values:string)_ | Annotations specifies additional annotations for the Service. |  | Optional: \{\} <br /> |
+
+
+#### StorageSpec
+
+
+
+StorageSpec configures persistent storage.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `persistence` _[PersistenceSpec](#persistencespec)_ | Persistence configures the PVC for the Paperclip data directory (/paperclip). |  | Optional: \{\} <br /> |
+
+

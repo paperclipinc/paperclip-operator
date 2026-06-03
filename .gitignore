@@ -25,3 +25,8 @@ go.work
 *.swp
 *.swo
 *~
+
+# docs site build artifacts
+docs-site/.venv/
+docs-site/site/
+docs-site/__pycache__/
