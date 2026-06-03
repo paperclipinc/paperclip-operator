@@ -769,6 +769,49 @@ type MetricsSpec struct {
 	// ServiceMonitor enables creating a Prometheus ServiceMonitor.
 	// +optional
 	ServiceMonitor *ServiceMonitorSpec `json:"serviceMonitor,omitempty"`
+
+	// PrometheusRule configures an auto-provisioned PrometheusRule with default
+	// operator alerts (reconcile errors, instance not-ready, restart rate).
+	// +optional
+	PrometheusRule *PrometheusRuleSpec `json:"prometheusRule,omitempty"`
+
+	// GrafanaDashboard configures auto-provisioned Grafana dashboard ConfigMaps.
+	// +optional
+	GrafanaDashboard *GrafanaDashboardSpec `json:"grafanaDashboard,omitempty"`
+}
+
+// PrometheusRuleSpec configures an auto-provisioned PrometheusRule.
+type PrometheusRuleSpec struct {
+	// Enabled enables PrometheusRule creation with operator alerts.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Labels to add to the PrometheusRule (e.g. for Prometheus rule selector matching).
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// RunbookBaseURL is the base URL for alert runbook links.
+	// +kubebuilder:default="https://paperclip.inc/docs/operators/paperclip/runbooks"
+	// +optional
+	RunbookBaseURL string `json:"runbookBaseURL,omitempty"`
+}
+
+// GrafanaDashboardSpec configures auto-provisioned Grafana dashboard ConfigMaps.
+type GrafanaDashboardSpec struct {
+	// Enabled enables Grafana dashboard ConfigMap creation.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Labels to add to the dashboard ConfigMaps (in addition to grafana_dashboard: "1").
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Folder is the Grafana folder to place the dashboards in.
+	// +kubebuilder:default="Paperclip"
+	// +optional
+	Folder string `json:"folder,omitempty"`
 }
 
 // ServiceMonitorSpec configures a Prometheus ServiceMonitor.
@@ -1031,6 +1074,12 @@ type ManagedResources struct {
 	RedisService string `json:"redisService,omitempty"`
 	// +optional
 	RedisPVC string `json:"redisPVC,omitempty"`
+	// +optional
+	PrometheusRule string `json:"prometheusRule,omitempty"`
+	// +optional
+	GrafanaDashboardOperator string `json:"grafanaDashboardOperator,omitempty"`
+	// +optional
+	GrafanaDashboardInstance string `json:"grafanaDashboardInstance,omitempty"`
 }
 
 // BackupStatus tracks the state of a backup operation.

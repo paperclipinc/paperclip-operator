@@ -31,6 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -115,6 +116,7 @@ type InstanceReconciler struct {
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile moves the cluster state toward the desired state defined by the Instance CR.
 //
@@ -314,6 +316,16 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.reconcileBackupCronJob(ctx, instance); err != nil {
 			return r.handleError(ctx, instance, "BackupCronJob", err)
 		}
+	}
+
+	// 12. PrometheusRule (optional)
+	if err := r.reconcilePrometheusRule(ctx, instance); err != nil {
+		return r.handleError(ctx, instance, "PrometheusRule", err)
+	}
+
+	// 13. Grafana dashboards (optional)
+	if err := r.reconcileGrafanaDashboards(ctx, instance); err != nil {
+		return r.handleError(ctx, instance, "GrafanaDashboards", err)
 	}
 
 	// Update status
@@ -1034,6 +1046,110 @@ func (r *InstanceReconciler) reconcileBackupCronJob(ctx context.Context, instanc
 		Message:            "Backup CronJob is provisioned",
 		ObservedGeneration: instance.Generation,
 	})
+	return nil
+}
+
+// reconcilePrometheusRule reconciles the optional PrometheusRule with default
+// operator alerts. When the monitoring.coreos.com CRD is not installed, it is
+// skipped silently. When disabled, any existing PrometheusRule is removed.
+func (r *InstanceReconciler) reconcilePrometheusRule(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
+	enabled := instance.Spec.Observability.Metrics.PrometheusRule != nil &&
+		instance.Spec.Observability.Metrics.PrometheusRule.Enabled
+
+	if !enabled {
+		existing := &unstructured.Unstructured{}
+		existing.SetGroupVersionKind(resources.PrometheusRuleGVK())
+		existing.SetName(resources.PrometheusRuleName(instance))
+		existing.SetNamespace(instance.Namespace)
+		if err := r.Delete(ctx, existing); err != nil && !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+			return err
+		}
+		instance.Status.ManagedResources.PrometheusRule = ""
+		return nil
+	}
+
+	pr := &unstructured.Unstructured{}
+	pr.SetGroupVersionKind(resources.PrometheusRuleGVK())
+	pr.SetName(resources.PrometheusRuleName(instance))
+	pr.SetNamespace(instance.Namespace)
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, pr, func() error {
+		desired := resources.BuildPrometheusRule(instance)
+		if spec, ok := desired.Object["spec"]; ok {
+			pr.Object["spec"] = spec
+		}
+		pr.SetLabels(desired.GetLabels())
+		return controllerutil.SetControllerReference(instance, pr, r.Scheme)
+	})
+	if meta.IsNoMatchError(err) {
+		// PrometheusRule CRD not installed - skip silently.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reconciling PrometheusRule: %w", err)
+	}
+
+	instance.Status.ManagedResources.PrometheusRule = pr.GetName()
+	return nil
+}
+
+// reconcileGrafanaDashboards reconciles the optional operator and instance
+// Grafana dashboard ConfigMaps. When disabled, any existing dashboards are removed.
+func (r *InstanceReconciler) reconcileGrafanaDashboards(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
+	enabled := instance.Spec.Observability.Metrics.GrafanaDashboard != nil &&
+		instance.Spec.Observability.Metrics.GrafanaDashboard.Enabled
+
+	if !enabled {
+		for _, name := range []string{
+			resources.GrafanaDashboardOperatorName(instance),
+			resources.GrafanaDashboardInstanceName(instance),
+		} {
+			existing := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: instance.Namespace},
+			}
+			if err := r.Delete(ctx, existing); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+		instance.Status.ManagedResources.GrafanaDashboardOperator = ""
+		instance.Status.ManagedResources.GrafanaDashboardInstance = ""
+		return nil
+	}
+
+	opCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resources.GrafanaDashboardOperatorName(instance),
+			Namespace: instance.Namespace,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, opCM, func() error {
+		desired := resources.BuildGrafanaDashboardOperator(instance)
+		opCM.Labels = desired.Labels
+		opCM.Annotations = desired.Annotations
+		opCM.Data = desired.Data
+		return controllerutil.SetControllerReference(instance, opCM, r.Scheme)
+	}); err != nil {
+		return fmt.Errorf("reconciling operator Grafana dashboard: %w", err)
+	}
+	instance.Status.ManagedResources.GrafanaDashboardOperator = opCM.Name
+
+	instCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      resources.GrafanaDashboardInstanceName(instance),
+			Namespace: instance.Namespace,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, r.Client, instCM, func() error {
+		desired := resources.BuildGrafanaDashboardInstance(instance)
+		instCM.Labels = desired.Labels
+		instCM.Annotations = desired.Annotations
+		instCM.Data = desired.Data
+		return controllerutil.SetControllerReference(instance, instCM, r.Scheme)
+	}); err != nil {
+		return fmt.Errorf("reconciling instance Grafana dashboard: %w", err)
+	}
+	instance.Status.ManagedResources.GrafanaDashboardInstance = instCM.Name
+
 	return nil
 }
 
