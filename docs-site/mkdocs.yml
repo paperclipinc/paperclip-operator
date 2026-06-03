@@ -1,0 +1,66 @@
+site_name: Paperclip Operator
+site_url: https://paperclip.inc/docs/operators/paperclip/
+site_description: Kubernetes operator for managing Paperclip instances with production-grade security, observability, and lifecycle management.
+site_author: Paperclip Inc.
+repo_url: https://github.com/paperclipinc/paperclip-operator
+repo_name: paperclipinc/paperclip-operator
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; Paperclip Inc.
+
+docs_dir: ../docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tracking
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+
+nav:
+  - Home: index.md
+  - API Reference: api-reference.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/paperclipinc/paperclip-operator

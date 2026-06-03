@@ -179,6 +179,37 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
 
+##@ Docs
+
+.PHONY: crd-ref-docs
+crd-ref-docs: $(CRD_REF_DOCS) ## Download crd-ref-docs locally if necessary.
+$(CRD_REF_DOCS): $(LOCALBIN)
+	test -s $(LOCALBIN)/crd-ref-docs || GOBIN=$(LOCALBIN) go install github.com/elastic/crd-ref-docs@$(CRD_REF_DOCS_VERSION)
+
+.PHONY: api-docs
+api-docs: manifests crd-ref-docs ## Regenerate docs/api-reference.md from CRD types.
+	$(CRD_REF_DOCS) \
+	  --config docs-site/crd-ref-docs.yaml \
+	  --source-path api/v1alpha1 \
+	  --output-path docs/api-reference.md \
+	  --renderer markdown
+
+.PHONY: docs-venv
+docs-venv: docs-site/.venv/bin/activate ## Create the docs-site Python virtualenv.
+docs-site/.venv/bin/activate: docs-site/requirements.txt
+	python3 -m venv docs-site/.venv
+	docs-site/.venv/bin/pip install --upgrade pip
+	docs-site/.venv/bin/pip install -r docs-site/requirements.txt
+	touch docs-site/.venv/bin/activate
+
+.PHONY: docs-serve
+docs-serve: docs-venv ## Run the docs site locally (http://127.0.0.1:8000).
+	docs-site/.venv/bin/mkdocs serve -f docs-site/mkdocs.yml
+
+.PHONY: docs-build
+docs-build: docs-venv ## Build the docs site (strict mode -- fails on broken links / warnings).
+	docs-site/.venv/bin/mkdocs build --strict -f docs-site/mkdocs.yml
+
 ##@ Build
 
 .PHONY: build
@@ -260,10 +291,12 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+CRD_REF_DOCS ?= $(LOCALBIN)/crd-ref-docs
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
+CRD_REF_DOCS_VERSION ?= v0.3.0
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
