@@ -37,6 +37,7 @@ var _ = Describe("GitOps coexistence (server-side apply)", Ordered, func() {
 	)
 
 	BeforeAll(func() {
+		waitForOperatorAvailable()
 		ns = freshNamespace("gitops")
 		yaml := readFile(filepath.Join("testdata", "minimal.yaml"))
 		namespaced = addNamespace(yaml, ns)

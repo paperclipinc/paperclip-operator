@@ -50,6 +50,7 @@ var _ = Describe("failure injection (controller restart)", Ordered, func() {
 	)
 
 	BeforeAll(func() {
+		waitForOperatorAvailable()
 		ns = freshNamespace("failure")
 		DeferCleanup(func() { deleteNamespace(ns) })
 	})

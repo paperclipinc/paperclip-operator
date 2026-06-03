@@ -54,18 +54,12 @@ var _ = BeforeSuite(func() {
 	if os.Getenv("KUBECONFIG") == "" {
 		Skip("KUBECONFIG not set: conformance suite requires a live kind cluster with the operator installed")
 	}
-	// `make deploy` only applies manifests and returns immediately. Wait for
-	// the controller-manager Deployment to be Available before any spec creates
-	// an Instance, otherwise the first specs race the operator's image pull,
-	// startup, and leader election and time out waiting for owned resources.
-	// CI also waits via `kubectl rollout status`; this is defense-in-depth for
-	// local runs and mirrors openclaw-operator's helm `--wait` install.
-	// (operatorNamespace() lives in failure_modes_test.go, same package.)
-	opNS := operatorNamespace()
-	out, err := kubectl("wait", "--for=condition=Available",
-		"deployment", "-n", opNS, "-l", "control-plane=controller-manager", "--timeout=5m")
-	Expect(err).ToNot(HaveOccurred(),
-		"operator Deployment in %s never became Available: %s", opNS, out)
+	// NOTE: do NOT wait for the operator Deployment here. The negative category
+	// (negative_test.go) is API-server-only: it exercises CEL/structural-schema
+	// denial with only the CRD installed and no controller-manager running, so a
+	// global wait would hang that job. The operator-readiness gate lives in the
+	// BeforeAll of each operator-dependent spec instead, via
+	// waitForOperatorAvailable (see helpers.go).
 })
 
 var _ = AfterSuite(func() {
@@ -73,3 +67,23 @@ var _ = AfterSuite(func() {
 		suiteCancel()
 	}
 })
+
+// waitForOperatorAvailable blocks until the controller-manager Deployment is
+// Available. `make deploy` only applies manifests and returns immediately; the
+// controller-manager Pod still has to pull its image, start, and win leader
+// election before it reconciles anything. Specs that create Instances must gate
+// on this so they do not race the operator and time out waiting for owned
+// resources. Mirrors openclaw-operator's `helm install --wait`.
+//
+// This is intentionally scoped to operator-dependent specs (called from their
+// BeforeAll) rather than the global BeforeSuite: the negative category is
+// API-server-only (CEL/schema denial with just the CRD installed, no operator)
+// and must never block on the controller-manager. (operatorNamespace lives in
+// failure_modes_test.go, same package.)
+func waitForOperatorAvailable() {
+	opNS := operatorNamespace()
+	out, err := kubectl("wait", "--for=condition=Available",
+		"deployment", "-n", opNS, "-l", "control-plane=controller-manager", "--timeout=5m")
+	Expect(err).ToNot(HaveOccurred(),
+		"operator Deployment in %s never became Available: %s", opNS, out)
+}

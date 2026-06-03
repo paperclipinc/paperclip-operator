@@ -39,6 +39,7 @@ var _ = Describe("upgrade-path matrix", Ordered, func() {
 	)
 
 	BeforeAll(func() {
+		waitForOperatorAvailable()
 		ns = freshNamespace("upgrade")
 		DeferCleanup(func() { deleteNamespace(ns) })
 	})

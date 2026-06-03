@@ -64,6 +64,7 @@ var _ = Describe("idempotency canary", Ordered, func() {
 	var ns string
 
 	BeforeAll(func() {
+		waitForOperatorAvailable()
 		ns = freshNamespace("idempotency")
 		DeferCleanup(func() { deleteNamespace(ns) })
 	})
