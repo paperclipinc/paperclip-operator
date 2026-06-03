@@ -1,0 +1,24 @@
+# PaperclipSelfConfig is an agent-driven, audited request to mutate the parent
+# Instance. The operator validates it against the parent's
+# .spec.selfConfigure.allowedActions allowlist, then applies the approved
+# changes via Server-Side Apply with the "paperclip-selfconfig" field manager so
+# GitOps controllers do not flap over the agent-owned fields.
+#
+# The parent Instance must opt in:
+#   spec:
+#     selfConfigure:
+#       enabled: true
+#       allowedActions: ["plugins", "envVars"]
+apiVersion: paperclip.inc/v1alpha1
+kind: PaperclipSelfConfig
+metadata:
+  name: add-search-plugin
+  namespace: default
+spec:
+  instanceRef: my-paperclip
+  addPlugins:
+    - name: "@paperclip/plugin-web-search"
+      version: "1.2.0"
+  addEnvVars:
+    - name: PAPERCLIP_FEATURE_FLAG_SEARCH
+      value: "true"

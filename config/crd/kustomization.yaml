@@ -3,6 +3,8 @@
 # It should be run by config/default
 resources:
 - bases/paperclip.inc_instances.yaml
+- bases/paperclip.inc_paperclipclusterdefaults.yaml
+- bases/paperclip.inc_paperclipselfconfigs.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

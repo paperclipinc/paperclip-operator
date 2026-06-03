@@ -1,0 +1,37 @@
+# PaperclipClusterDefaults is a cluster-scoped singleton (name must be "cluster")
+# whose spec is merged into every Instance at reconcile time.
+# Per-instance fields always win; defaults only fill in unset fields.
+#
+# Typical use: org-wide image pinning, a default storage class, default
+# observability and the package-mirror env vars that every Instance would
+# otherwise have to repeat.
+apiVersion: paperclip.inc/v1alpha1
+kind: PaperclipClusterDefaults
+metadata:
+  name: cluster
+spec:
+  # Defaults are applied independently per sub-field. Here we pin only the tag;
+  # instances that set spec.image.repository keep their own repository.
+  image:
+    tag: "2026.0403"
+
+  # Default storage class for the data PVC and the managed Postgres/Redis PVCs.
+  storageClass: standard
+
+  # Default database mode for instances that leave spec.database.mode unset.
+  databaseMode: managed
+
+  observability:
+    metrics:
+      enabled: true
+    logging:
+      level: info
+
+  networking:
+    service:
+      type: ClusterIP
+
+  # Shared env vars. Instance entries with the same Name override these.
+  env:
+    - name: NPM_CONFIG_REGISTRY
+      value: https://registry.npmjs.org

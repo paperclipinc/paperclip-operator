@@ -25,4 +25,10 @@ resources:
 - paperclipinstance_admin_role.yaml
 - paperclipinstance_editor_role.yaml
 - paperclipinstance_viewer_role.yaml
+- paperclipclusterdefaults_admin_role.yaml
+- paperclipclusterdefaults_editor_role.yaml
+- paperclipclusterdefaults_viewer_role.yaml
+- paperclipselfconfig_admin_role.yaml
+- paperclipselfconfig_editor_role.yaml
+- paperclipselfconfig_viewer_role.yaml
 

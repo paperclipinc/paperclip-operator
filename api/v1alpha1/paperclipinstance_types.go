@@ -73,6 +73,11 @@ type InstanceSpec struct {
 	// +optional
 	Plugins []PluginRef `json:"plugins,omitempty"`
 
+	// SelfConfigure enables agents to modify their own Instance via
+	// PaperclipSelfConfig resources, gated by an action allowlist.
+	// +optional
+	SelfConfigure SelfConfigureSpec `json:"selfConfigure,omitempty"`
+
 	// Env specifies additional environment variables for the Paperclip container.
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
@@ -134,6 +139,11 @@ type InstanceSpec struct {
 	// RestoreFrom specifies a remote backup path to restore from on first boot.
 	// +optional
 	RestoreFrom string `json:"restoreFrom,omitempty"`
+
+	// Tailscale configures an ephemeral Tailscale sidecar that Serves the
+	// Paperclip app over the tailnet.
+	// +optional
+	Tailscale TailscaleSpec `json:"tailscale,omitempty"`
 
 	// Sidecars specifies additional sidecar containers.
 	// +optional
@@ -580,6 +590,72 @@ type ConnectionsSpec struct {
 	// or override the built-in provider definitions at runtime.
 	// +optional
 	ProvidersConfigRef *corev1.LocalObjectReference `json:"providersConfigRef,omitempty"`
+}
+
+// TailscaleSpec configures an ephemeral Tailscale sidecar for secure tailnet
+// access. When enabled, a userspace tailscaled sidecar runs alongside the
+// Paperclip container and Serves the app (port 3100) over the tailnet via
+// TS_SERVE_CONFIG. Use an ephemeral, reusable auth key from the Tailscale admin
+// console so the node is automatically removed when the pod is deleted.
+type TailscaleSpec struct {
+	// Enabled enables the Tailscale sidecar.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Mode selects the Tailscale exposure mode.
+	// "serve" exposes the instance to tailnet members only (default).
+	// "funnel" exposes the instance to the public internet via Tailscale Funnel.
+	// +kubebuilder:validation:Enum=serve;funnel
+	// +kubebuilder:default="serve"
+	// +optional
+	Mode string `json:"mode,omitempty"`
+
+	// Image configures the Tailscale sidecar container image.
+	// +optional
+	Image TailscaleImageSpec `json:"image,omitempty"`
+
+	// AuthKey references a Secret containing the Tailscale auth key. The Secret
+	// must have a key matching AuthKey.Key (default: "authkey"). Use an
+	// ephemeral+reusable key from the Tailscale admin console.
+	// +optional
+	AuthKey *TailscaleAuthKeySpec `json:"authKey,omitempty"`
+
+	// Hostname sets the Tailscale device name (defaults to the instance name).
+	// +optional
+	Hostname string `json:"hostname,omitempty"`
+
+	// Resources specifies compute resources for the Tailscale sidecar container.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// TailscaleAuthKeySpec references a Secret key holding the Tailscale auth key.
+type TailscaleAuthKeySpec struct {
+	// SecretRef references the Secret containing the auth key.
+	SecretRef corev1.LocalObjectReference `json:"secretRef"`
+
+	// Key is the key within the referenced Secret. Defaults to "authkey".
+	// +kubebuilder:default="authkey"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// TailscaleImageSpec defines the Tailscale sidecar container image.
+type TailscaleImageSpec struct {
+	// Repository is the container image repository.
+	// +kubebuilder:default="ghcr.io/tailscale/tailscale"
+	// +optional
+	Repository string `json:"repository,omitempty"`
+
+	// Tag is the container image tag.
+	// +kubebuilder:default="stable"
+	// +optional
+	Tag string `json:"tag,omitempty"`
+
+	// Digest is the container image digest for supply-chain security.
+	// +optional
+	Digest string `json:"digest,omitempty"`
 }
 
 // PluginRef references a Paperclip plugin.
