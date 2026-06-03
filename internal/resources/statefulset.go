@@ -17,7 +17,7 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance, extraPodAnnotations 
 	labels := LabelsWithComponent(instance, "server")
 	selectorLabels := SelectorLabels(instance)
 
-	replicas := EffectiveReplicas(instance)
+	replicas := StatefulSetReplicas(instance)
 
 	container := buildMainContainer(instance)
 	volumes := buildVolumes(instance)
@@ -30,6 +30,7 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance, extraPodAnnotations 
 		SchedulerName:                 "default-scheduler",
 		TerminationGracePeriodSeconds: Ptr(int64(30)),
 		ServiceAccountName:            ServiceAccountName(instance),
+		ShareProcessNamespace:         shareProcessNamespace(instance),
 	}
 
 	// Pod security context
@@ -837,6 +838,17 @@ exit 1
 		VolumeMounts:    buildVolumeMounts(instance),
 		SecurityContext: paperclipContainerSecurityContext(instance),
 	}
+}
+
+// shareProcessNamespace returns the effective ShareProcessNamespace value,
+// defaulting to true so a pause container reaps zombie processes left by the
+// Node.js server (which does not call waitpid()). Users may opt out by setting
+// spec.shareProcessNamespace to false.
+func shareProcessNamespace(instance *paperclipv1alpha1.Instance) *bool {
+	if instance.Spec.ShareProcessNamespace != nil {
+		return instance.Spec.ShareProcessNamespace
+	}
+	return Ptr(true)
 }
 
 func containerImage(instance *paperclipv1alpha1.Instance) string {

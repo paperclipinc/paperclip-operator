@@ -1581,3 +1581,59 @@ func TestDefaultSecurityContextOnOnboardAndBootstrap(t *testing.T) {
 		t.Error("bootstrap: expected default AllowPrivilegeEscalation=false")
 	}
 }
+
+func TestBuildStatefulSetShareProcessNamespace(t *testing.T) {
+	// Default: nil spec value yields ShareProcessNamespace=true for zombie reaping.
+	instance := newTestInstance("share-default")
+	sts := BuildStatefulSet(instance, nil)
+	if sps := sts.Spec.Template.Spec.ShareProcessNamespace; sps == nil || *sps != true {
+		t.Fatalf("expected default ShareProcessNamespace=true, got %v", sps)
+	}
+
+	// Opt-out: explicit false is honored.
+	instance.Spec.ShareProcessNamespace = Ptr(false)
+	sts = BuildStatefulSet(instance, nil)
+	if sps := sts.Spec.Template.Spec.ShareProcessNamespace; sps == nil || *sps != false {
+		t.Fatalf("expected ShareProcessNamespace=false when opted out, got %v", sps)
+	}
+
+	// Explicit true is honored.
+	instance.Spec.ShareProcessNamespace = Ptr(true)
+	sts = BuildStatefulSet(instance, nil)
+	if sps := sts.Spec.Template.Spec.ShareProcessNamespace; sps == nil || *sps != true {
+		t.Fatalf("expected ShareProcessNamespace=true, got %v", sps)
+	}
+}
+
+func TestBuildStatefulSetSuspended(t *testing.T) {
+	instance := newTestInstance("suspend")
+	instance.Spec.Availability.Replicas = Ptr(int32(3))
+
+	// Not suspended: replicas reflect the effective count.
+	sts := BuildStatefulSet(instance, nil)
+	if sts.Spec.Replicas == nil || *sts.Spec.Replicas != 3 {
+		t.Fatalf("expected 3 replicas when not suspended, got %v", sts.Spec.Replicas)
+	}
+
+	// Suspended: replicas forced to 0 (scale-to-zero).
+	instance.Spec.Suspended = true
+	sts = BuildStatefulSet(instance, nil)
+	if sts.Spec.Replicas == nil || *sts.Spec.Replicas != 0 {
+		t.Fatalf("expected 0 replicas when suspended, got %v", sts.Spec.Replicas)
+	}
+}
+
+func TestStatefulSetReplicas(t *testing.T) {
+	instance := newTestInstance("repl")
+	if got := StatefulSetReplicas(instance); got != 1 {
+		t.Errorf("expected default 1 replica, got %d", got)
+	}
+	instance.Spec.Availability.Replicas = Ptr(int32(5))
+	if got := StatefulSetReplicas(instance); got != 5 {
+		t.Errorf("expected 5 replicas, got %d", got)
+	}
+	instance.Spec.Suspended = true
+	if got := StatefulSetReplicas(instance); got != 0 {
+		t.Errorf("expected 0 replicas when suspended, got %d", got)
+	}
+}

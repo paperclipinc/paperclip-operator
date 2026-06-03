@@ -59,6 +59,22 @@ const (
 	ConditionServiceReady = "ServiceReady"
 	// ConditionRedisReady indicates the managed Redis is ready.
 	ConditionRedisReady = "RedisReady"
+	// ConditionNetworkPolicyReady indicates the NetworkPolicy is reconciled.
+	ConditionNetworkPolicyReady = "NetworkPolicyReady"
+	// ConditionRBACReady indicates the ServiceAccount and RBAC are reconciled.
+	ConditionRBACReady = "RBACReady"
+	// ConditionIngressReady indicates the Ingress is reconciled.
+	ConditionIngressReady = "IngressReady"
+	// ConditionHTTPRouteReady indicates the HTTPRoute is reconciled.
+	ConditionHTTPRouteReady = "HTTPRouteReady"
+	// ConditionPDBReady indicates the PodDisruptionBudget is reconciled.
+	ConditionPDBReady = "PDBReady"
+	// ConditionHPAReady indicates the HorizontalPodAutoscaler is reconciled.
+	ConditionHPAReady = "HPAReady"
+	// ConditionBackupReady indicates the backup CronJob is reconciled.
+	ConditionBackupReady = "BackupReady"
+	// ConditionSuspended indicates the instance is suspended (scaled to zero).
+	ConditionSuspended = "Suspended"
 
 	// ModeManaged is the value for managed resource modes (database, redis).
 	ModeManaged = "managed"
@@ -120,7 +136,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	defer func() {
 		reconcileDuration.WithLabelValues(instance.Name, instance.Namespace).Observe(time.Since(start).Seconds())
 		// Update phase metric
-		for _, phase := range []string{"Pending", "Provisioning", "Running", "Degraded", "Failed", "Terminating"} {
+		for _, phase := range []string{"Pending", "Provisioning", "Running", "Degraded", "Failed", "Terminating", "BackingUp", "Restoring", "Updating", "Suspended"} {
 			val := float64(0)
 			if string(instance.Status.Phase) == phase {
 				val = 1
@@ -338,6 +354,14 @@ func (r *InstanceReconciler) reconcileServiceAccount(ctx context.Context, instan
 	}
 
 	instance.Status.ManagedResources.ServiceAccount = obj.Name
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionRBACReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "RBACProvisioned",
+		Message:            "ServiceAccount and RBAC are provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -665,8 +689,9 @@ func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 		obj.Labels = desired.Labels
 		// When HPA is enabled, preserve the current replica count to avoid
-		// fighting the autoscaler on every reconcile.
-		if as := instance.Spec.Availability.AutoScaling; as != nil && as.Enabled && obj.Spec.Replicas != nil {
+		// fighting the autoscaler on every reconcile. Suspended takes priority:
+		// scale-to-zero must win over the autoscaler's last-known count.
+		if as := instance.Spec.Availability.AutoScaling; as != nil && as.Enabled && obj.Spec.Replicas != nil && !instance.Spec.Suspended {
 			desired.Spec.Replicas = obj.Spec.Replicas
 		}
 		obj.Spec = desired.Spec
@@ -679,11 +704,20 @@ func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance 
 	instance.Status.ManagedResources.StatefulSet = obj.Name
 
 	// Update StatefulSet condition
-	ready := obj.Status.ReadyReplicas > 0
 	status := metav1.ConditionFalse
 	reason := "StatefulSetNotReady"
 	message := "StatefulSet has no ready replicas"
-	if ready {
+	if instance.Spec.Suspended {
+		// Suspended: desired is 0 replicas. Ready once all pods are terminated.
+		if obj.Status.Replicas == 0 {
+			status = metav1.ConditionTrue
+			reason = "StatefulSetSuspended"
+			message = "StatefulSet scaled to zero (instance suspended)"
+		} else {
+			reason = "StatefulSetSuspending"
+			message = fmt.Sprintf("StatefulSet draining %d replicas (instance suspended)", obj.Status.Replicas)
+		}
+	} else if obj.Status.ReadyReplicas > 0 {
 		status = metav1.ConditionTrue
 		reason = "StatefulSetReady"
 		message = fmt.Sprintf("StatefulSet has %d ready replicas", obj.Status.ReadyReplicas)
@@ -759,6 +793,14 @@ func (r *InstanceReconciler) reconcileIngress(ctx context.Context, instance *pap
 	}
 
 	instance.Status.ManagedResources.Ingress = obj.Name
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionIngressReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "IngressProvisioned",
+		Message:            "Ingress is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -786,6 +828,14 @@ func (r *InstanceReconciler) reconcileHTTPRoute(ctx context.Context, instance *p
 	}
 
 	instance.Status.ManagedResources.HTTPRoute = obj.Name
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionHTTPRouteReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "HTTPRouteProvisioned",
+		Message:            "HTTPRoute is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -808,6 +858,14 @@ func (r *InstanceReconciler) reconcileNetworkPolicy(ctx context.Context, instanc
 	}
 
 	instance.Status.ManagedResources.NetworkPolicy = obj.Name
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionNetworkPolicyReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "NetworkPolicyProvisioned",
+		Message:            "NetworkPolicy is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -869,6 +927,13 @@ func (r *InstanceReconciler) reconcileHPA(ctx context.Context, instance *papercl
 		return fmt.Errorf("reconciling HPA: %w", err)
 	}
 
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionHPAReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "HPAProvisioned",
+		Message:            "HorizontalPodAutoscaler is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -890,6 +955,13 @@ func (r *InstanceReconciler) reconcilePDB(ctx context.Context, instance *papercl
 		return fmt.Errorf("reconciling PDB: %w", err)
 	}
 
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionPDBReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "PDBProvisioned",
+		Message:            "PodDisruptionBudget is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
@@ -955,11 +1027,43 @@ func (r *InstanceReconciler) reconcileBackupCronJob(ctx context.Context, instanc
 		return fmt.Errorf("reconciling backup CronJob: %w", err)
 	}
 
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionBackupReady,
+		Status:             metav1.ConditionTrue,
+		Reason:             "BackupProvisioned",
+		Message:            "Backup CronJob is provisioned",
+		ObservedGeneration: instance.Generation,
+	})
 	return nil
 }
 
 func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
 	instance.Status.ObservedGeneration = instance.Generation
+
+	// Suspended: override phase and readiness. The workload is scaled to zero
+	// but all non-runtime resources remain managed.
+	if instance.Spec.Suspended {
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionSuspended,
+			Status:             metav1.ConditionTrue,
+			Reason:             "Suspended",
+			Message:            "Instance is suspended (spec.suspended=true), workload scaled to zero",
+			ObservedGeneration: instance.Generation,
+		})
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionReady,
+			Status:             metav1.ConditionFalse,
+			Reason:             "Suspended",
+			Message:            "Instance is suspended, not serving traffic",
+			ObservedGeneration: instance.Generation,
+		})
+		instance.Status.Phase = paperclipv1alpha1.PhaseSuspended
+		r.setEndpoint(instance)
+		return r.Status().Update(ctx, instance)
+	}
+
+	// Not suspended: clear any stale Suspended condition.
+	meta.RemoveStatusCondition(&instance.Status.Conditions, ConditionSuspended)
 
 	// Determine overall phase
 	allReady := allSubConditionsReady(instance.Status.Conditions)
@@ -984,19 +1088,23 @@ func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *papercl
 		})
 	}
 
-	// Set endpoint
-	if instance.Spec.Deployment.PublicURL != "" {
-		instance.Status.Endpoint = instance.Spec.Deployment.PublicURL
-	} else {
-		port := int32(3100)
-		if instance.Spec.Networking.Service.Port > 0 {
-			port = instance.Spec.Networking.Service.Port
-		}
-		instance.Status.Endpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
-			resources.ServiceName(instance), instance.Namespace, port)
-	}
+	r.setEndpoint(instance)
 
 	return r.Status().Update(ctx, instance)
+}
+
+// setEndpoint records the primary service endpoint URL in status.
+func (r *InstanceReconciler) setEndpoint(instance *paperclipv1alpha1.Instance) {
+	if instance.Spec.Deployment.PublicURL != "" {
+		instance.Status.Endpoint = instance.Spec.Deployment.PublicURL
+		return
+	}
+	port := int32(3100)
+	if instance.Spec.Networking.Service.Port > 0 {
+		port = instance.Spec.Networking.Service.Port
+	}
+	instance.Status.Endpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
+		resources.ServiceName(instance), instance.Namespace, port)
 }
 
 // allSubConditionsReady returns true when every condition except ConditionReady
@@ -1005,7 +1113,7 @@ func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *papercl
 // from ever becoming true.
 func allSubConditionsReady(conditions []metav1.Condition) bool {
 	for _, cond := range conditions {
-		if cond.Type == ConditionReady {
+		if cond.Type == ConditionReady || cond.Type == ConditionSuspended {
 			continue
 		}
 		if cond.Status != metav1.ConditionTrue {

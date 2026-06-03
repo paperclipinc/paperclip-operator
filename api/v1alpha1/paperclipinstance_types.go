@@ -89,6 +89,28 @@ type InstanceSpec struct {
 	// +optional
 	Security SecuritySpec `json:"security,omitempty"`
 
+	// ShareProcessNamespace enables PID namespace sharing between all containers
+	// in the pod. When true, the infrastructure (pause) container becomes PID 1
+	// and reaps zombie processes, which prevents accumulation of defunct helper
+	// processes (git, plugins, shells) under a Node.js server that does not call
+	// waitpid(). Defaults to true.
+	//
+	// Security note: enabling this lets every container in the pod see and signal
+	// every other container's processes. A compromised sidecar could send signals
+	// to the server and vice versa. Set to false to keep per-container PID
+	// isolation; you are then responsible for reaping zombies (e.g. by baking
+	// tini or dumb-init into the image).
+	// +kubebuilder:default=true
+	// +optional
+	ShareProcessNamespace *bool `json:"shareProcessNamespace,omitempty"`
+
+	// Suspended scales the workload to zero replicas when true. Non-runtime
+	// resources (Service, ConfigMap, RBAC, NetworkPolicy, PVC) remain fully
+	// managed. Set to false to resume normal operation.
+	// +kubebuilder:default=false
+	// +optional
+	Suspended bool `json:"suspended,omitempty"`
+
 	// Networking configures service, ingress, and WebSocket settings.
 	// +optional
 	Networking NetworkingSpec `json:"networking,omitempty"`
@@ -928,7 +950,7 @@ type BackupS3Spec struct {
 // --- Status types ---
 
 // InstancePhase describes the phase of a Instance.
-// +kubebuilder:validation:Enum=Pending;Provisioning;Running;Degraded;Failed;Terminating;BackingUp;Restoring;Updating
+// +kubebuilder:validation:Enum=Pending;Provisioning;Running;Degraded;Failed;Terminating;BackingUp;Restoring;Updating;Suspended
 type InstancePhase string
 
 const (
@@ -941,6 +963,7 @@ const (
 	PhaseBackingUp    InstancePhase = "BackingUp"
 	PhaseRestoring    InstancePhase = "Restoring"
 	PhaseUpdating     InstancePhase = "Updating"
+	PhaseSuspended    InstancePhase = "Suspended"
 )
 
 // InstanceStatus defines the observed state of Instance.

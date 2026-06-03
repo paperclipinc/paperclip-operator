@@ -709,6 +709,11 @@ func (in *InstanceSpec) DeepCopyInto(out *InstanceSpec) {
 	}
 	in.Resources.DeepCopyInto(&out.Resources)
 	in.Security.DeepCopyInto(&out.Security)
+	if in.ShareProcessNamespace != nil {
+		in, out := &in.ShareProcessNamespace, &out.ShareProcessNamespace
+		*out = new(bool)
+		**out = **in
+	}
 	in.Networking.DeepCopyInto(&out.Networking)
 	in.Observability.DeepCopyInto(&out.Observability)
 	in.Availability.DeepCopyInto(&out.Availability)
