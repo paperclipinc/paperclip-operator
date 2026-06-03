@@ -53,8 +53,10 @@ const (
 	idempotencyReconciles = 10
 	// idempotencyCreateWait bounds how long we wait for the operator to create
 	// the instance's owned StatefulSet and Service. This is creation only (no
-	// image pull or app boot), so it settles quickly even on kind.
-	idempotencyCreateWait = 2 * time.Minute
+	// image pull or app boot). The suite already waits for the operator to be
+	// Available before this point, so creation settles quickly; the generous
+	// bound is headroom for a busy kind cluster.
+	idempotencyCreateWait = 5 * time.Minute
 	idempotencyPokeWait   = 15 * time.Second
 )
 

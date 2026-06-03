@@ -52,6 +52,19 @@ jobs:
           kind load docker-image paperclip-operator:dev --name paperclip-conformance
       - name: Deploy operator
         run: make deploy IMG=paperclip-operator:dev
+      - name: Wait for operator to be Available
+        # make deploy only applies manifests and returns immediately; the
+        # controller-manager Pod still has to pull its image, start, and win
+        # leader election before it reconciles anything. Block here until the
+        # Deployment is Available so the conformance suite never races the
+        # operator. Mirrors openclaw-operator's `helm install --wait`.
+        run: |
+          kubectl rollout status \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=10m
+          kubectl wait --for=condition=Available \
+            deploy -l control-plane=controller-manager \
+            -n paperclip-operator-system --timeout=5m
       - name: Run idempotency conformance
         env:
           KUBECONFIG: /home/runner/.kube/config

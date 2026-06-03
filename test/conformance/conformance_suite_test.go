@@ -54,6 +54,18 @@ var _ = BeforeSuite(func() {
 	if os.Getenv("KUBECONFIG") == "" {
 		Skip("KUBECONFIG not set: conformance suite requires a live kind cluster with the operator installed")
 	}
+	// `make deploy` only applies manifests and returns immediately. Wait for
+	// the controller-manager Deployment to be Available before any spec creates
+	// an Instance, otherwise the first specs race the operator's image pull,
+	// startup, and leader election and time out waiting for owned resources.
+	// CI also waits via `kubectl rollout status`; this is defense-in-depth for
+	// local runs and mirrors openclaw-operator's helm `--wait` install.
+	// (operatorNamespace() lives in failure_modes_test.go, same package.)
+	opNS := operatorNamespace()
+	out, err := kubectl("wait", "--for=condition=Available",
+		"deployment", "-n", opNS, "-l", "control-plane=controller-manager", "--timeout=5m")
+	Expect(err).ToNot(HaveOccurred(),
+		"operator Deployment in %s never became Available: %s", opNS, out)
 })
 
 var _ = AfterSuite(func() {
