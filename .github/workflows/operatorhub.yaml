@@ -52,9 +52,16 @@ jobs:
             bundle/manifests/paperclip-operator.v*.clusterserviceversion.yaml \
             > "${BUNDLE_DIR}/manifests/paperclip-operator.v${VERSION}.clusterserviceversion.yaml"
 
-          # Copy CRD and metadata as-is
-          cp bundle/manifests/paperclip.inc_instances.yaml "${BUNDLE_DIR}/manifests/" 2>/dev/null || \
-            cp config/crd/bases/paperclip.inc_instances.yaml "${BUNDLE_DIR}/manifests/"
+          # Copy all CRD manifests and metadata as-is. The bundle ships every
+          # CRD the operator's controllers watch (instances,
+          # paperclipclusterdefaults, paperclipselfconfigs); an OLM install that
+          # is missing any of them crashes on cache sync. Prefer the curated
+          # bundle/manifests/ copies, falling back to config/crd/bases/.
+          if ls bundle/manifests/paperclip.inc_*.yaml >/dev/null 2>&1; then
+            cp bundle/manifests/paperclip.inc_*.yaml "${BUNDLE_DIR}/manifests/"
+          else
+            cp config/crd/bases/paperclip.inc_*.yaml "${BUNDLE_DIR}/manifests/"
+          fi
           cp bundle/metadata/annotations.yaml "${BUNDLE_DIR}/metadata/"
 
           echo "Bundle prepared at ${BUNDLE_DIR}:"
@@ -177,9 +184,16 @@ jobs:
             bundle/manifests/paperclip-operator.v*.clusterserviceversion.yaml \
             > "${BUNDLE_DIR}/manifests/paperclip-operator.v${VERSION}.clusterserviceversion.yaml"
 
-          # Copy CRD and metadata as-is
-          cp bundle/manifests/paperclip.inc_instances.yaml "${BUNDLE_DIR}/manifests/" 2>/dev/null || \
-            cp config/crd/bases/paperclip.inc_instances.yaml "${BUNDLE_DIR}/manifests/"
+          # Copy all CRD manifests and metadata as-is. The bundle ships every
+          # CRD the operator's controllers watch (instances,
+          # paperclipclusterdefaults, paperclipselfconfigs); an OLM install that
+          # is missing any of them crashes on cache sync. Prefer the curated
+          # bundle/manifests/ copies, falling back to config/crd/bases/.
+          if ls bundle/manifests/paperclip.inc_*.yaml >/dev/null 2>&1; then
+            cp bundle/manifests/paperclip.inc_*.yaml "${BUNDLE_DIR}/manifests/"
+          else
+            cp config/crd/bases/paperclip.inc_*.yaml "${BUNDLE_DIR}/manifests/"
+          fi
           cp bundle/metadata/annotations.yaml "${BUNDLE_DIR}/metadata/"
 
           echo "Bundle prepared at ${BUNDLE_DIR}:"
