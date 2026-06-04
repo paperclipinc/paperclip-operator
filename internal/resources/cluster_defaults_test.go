@@ -156,4 +156,3 @@ func TestApplyClusterDefaults_MergeEnvByName(t *testing.T) {
 		t.Errorf("expected default name first, got %q", out.Spec.Env[0].Name)
 	}
 }
-
