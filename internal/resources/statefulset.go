@@ -388,9 +388,6 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		})
 	}
 
-	// Managed inference
-	vars = append(vars, buildManagedInferenceEnvVars(instance)...)
-
 	// Cloud sandbox
 	vars = append(vars, buildCloudSandboxEnvVars(instance)...)
 
@@ -510,62 +507,6 @@ func buildAuthEmailAndOAuthEnvVars(instance *paperclipv1alpha1.Instance) []corev
 	return vars
 }
 
-func buildManagedInferenceEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
-	if instance.Spec.Adapters.ManagedInferenceSecretRef == nil {
-		return nil
-	}
-
-	secretRef := *instance.Spec.Adapters.ManagedInferenceSecretRef
-
-	// Per-provider keys - each is optional in the Secret
-	providerKeys := []string{
-		"PAPERCLIP_MANAGED_ANTHROPIC_API_KEY",
-		"PAPERCLIP_MANAGED_OPENAI_API_KEY",
-		"PAPERCLIP_MANAGED_GEMINI_API_KEY",
-		"PAPERCLIP_MANAGED_OPENROUTER_API_KEY",
-	}
-
-	vars := make([]corev1.EnvVar, 0, len(providerKeys)+3)
-	for _, key := range providerKeys {
-		vars = append(vars, corev1.EnvVar{
-			Name: key,
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: secretRef,
-					Key:                  key,
-					Optional:             Ptr(true),
-				},
-			},
-		})
-	}
-
-	// Legacy single-key for backward compatibility
-	vars = append(vars, corev1.EnvVar{
-		Name: "PAPERCLIP_MANAGED_INFERENCE_API_KEY",
-		ValueFrom: &corev1.EnvVarSource{
-			SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: secretRef,
-				Key:                  "PAPERCLIP_MANAGED_INFERENCE_API_KEY",
-				Optional:             Ptr(true),
-			},
-		},
-	})
-
-	if instance.Spec.Adapters.ManagedInferenceProvider != "" {
-		vars = append(vars, corev1.EnvVar{
-			Name:  "PAPERCLIP_MANAGED_INFERENCE_PROVIDER",
-			Value: instance.Spec.Adapters.ManagedInferenceProvider,
-		})
-	}
-	if instance.Spec.Adapters.ManagedInferenceModel != "" {
-		vars = append(vars, corev1.EnvVar{
-			Name:  "PAPERCLIP_MANAGED_INFERENCE_MODEL",
-			Value: instance.Spec.Adapters.ManagedInferenceModel,
-		})
-	}
-
-	return vars
-}
 
 func buildCloudSandboxEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 	cs := instance.Spec.Adapters.CloudSandbox

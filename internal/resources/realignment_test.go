@@ -104,3 +104,22 @@ func TestBuildStatefulSet_NoRedisEnv(t *testing.T) {
 		t.Error("Redis env must not be emitted; the app has no Redis rate limiter")
 	}
 }
+
+// --- Task 4: managed-inference removed ---
+
+func TestBuildStatefulSet_NoManagedInferenceEnv(t *testing.T) {
+	env := containerEnv(newTestInstance("p"))
+	for _, name := range []string{
+		"PAPERCLIP_MANAGED_ANTHROPIC_API_KEY",
+		"PAPERCLIP_MANAGED_OPENAI_API_KEY",
+		"PAPERCLIP_MANAGED_GEMINI_API_KEY",
+		"PAPERCLIP_MANAGED_OPENROUTER_API_KEY",
+		"PAPERCLIP_MANAGED_INFERENCE_API_KEY",
+		"PAPERCLIP_MANAGED_INFERENCE_PROVIDER",
+		"PAPERCLIP_MANAGED_INFERENCE_MODEL",
+	} {
+		if hasEnvName(env, name) {
+			t.Errorf("fabricated env %s must not be emitted", name)
+		}
+	}
+}

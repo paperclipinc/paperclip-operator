@@ -657,64 +657,6 @@ func TestBuildStatefulSetCloudSandboxEnvVars(t *testing.T) {
 	}
 }
 
-func TestBuildStatefulSetManagedInferenceEnvVars(t *testing.T) {
-	instance := newTestInstance("my-paperclip")
-	instance.Spec.Adapters.ManagedInferenceSecretRef = &corev1.LocalObjectReference{Name: "inference-secret"}
-	instance.Spec.Adapters.ManagedInferenceProvider = "anthropic"
-	instance.Spec.Adapters.ManagedInferenceModel = "claude-sonnet-4-6"
-	sts := BuildStatefulSet(instance, nil)
-	container := sts.Spec.Template.Spec.Containers[0]
-
-	// Check API key from secret
-	var foundKey bool
-	for _, env := range container.Env {
-		if env.Name == "PAPERCLIP_MANAGED_INFERENCE_API_KEY" {
-			foundKey = true
-			if env.ValueFrom == nil || env.ValueFrom.SecretKeyRef == nil {
-				t.Fatal("expected SecretKeyRef for PAPERCLIP_MANAGED_INFERENCE_API_KEY")
-			}
-			if env.ValueFrom.SecretKeyRef.Name != "inference-secret" {
-				t.Errorf("expected secret name 'inference-secret', got %q", env.ValueFrom.SecretKeyRef.Name)
-			}
-			if env.ValueFrom.SecretKeyRef.Key != "PAPERCLIP_MANAGED_INFERENCE_API_KEY" {
-				t.Errorf("expected key 'PAPERCLIP_MANAGED_INFERENCE_API_KEY', got %q", env.ValueFrom.SecretKeyRef.Key)
-			}
-		}
-	}
-	if !foundKey {
-		t.Error("expected PAPERCLIP_MANAGED_INFERENCE_API_KEY env var")
-	}
-
-	// Check plain env vars
-	envMap := make(map[string]string)
-	for _, env := range container.Env {
-		if env.Value != "" {
-			envMap[env.Name] = env.Value
-		}
-	}
-	if envMap["PAPERCLIP_MANAGED_INFERENCE_PROVIDER"] != "anthropic" {
-		t.Errorf("expected provider 'anthropic', got %q", envMap["PAPERCLIP_MANAGED_INFERENCE_PROVIDER"])
-	}
-	if envMap["PAPERCLIP_MANAGED_INFERENCE_MODEL"] != "claude-sonnet-4-6" {
-		t.Errorf("expected model 'claude-sonnet-4-6', got %q", envMap["PAPERCLIP_MANAGED_INFERENCE_MODEL"])
-	}
-}
-
-func TestBuildStatefulSetManagedInferenceNoSecretRef(t *testing.T) {
-	instance := newTestInstance("my-paperclip")
-	// ManagedInferenceSecretRef is nil by default
-	sts := BuildStatefulSet(instance, nil)
-	container := sts.Spec.Template.Spec.Containers[0]
-
-	for _, env := range container.Env {
-		if env.Name == "PAPERCLIP_MANAGED_INFERENCE_API_KEY" ||
-			env.Name == "PAPERCLIP_MANAGED_INFERENCE_PROVIDER" ||
-			env.Name == "PAPERCLIP_MANAGED_INFERENCE_MODEL" {
-			t.Errorf("unexpected managed inference env var %q when secret ref is nil", env.Name)
-		}
-	}
-}
-
 func TestBuildStatefulSetCloudSandboxPersistenceEnvVars(t *testing.T) {
 	instance := newTestInstance("my-paperclip")
 	instance.Spec.Adapters.CloudSandbox = &paperclipv1alpha1.CloudSandboxSpec{

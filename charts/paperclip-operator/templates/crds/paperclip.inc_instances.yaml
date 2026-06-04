@@ -266,38 +266,6 @@ spec:
                             type: object
                         type: object
                     type: object
-                  managedInferenceModel:
-                    default: claude-sonnet-4-6
-                    description: ManagedInferenceModel is the default model for managed
-                      inference.
-                    type: string
-                  managedInferenceProvider:
-                    default: anthropic
-                    description: |-
-                      ManagedInferenceProvider is the LLM provider for the legacy single-key mode.
-                      Ignored when per-provider keys are used.
-                    type: string
-                  managedInferenceSecretRef:
-                    description: |-
-                      ManagedInferenceSecretRef references a Secret containing platform LLM API keys.
-                      The Secret should contain one or more of these keys:
-                        PAPERCLIP_MANAGED_ANTHROPIC_API_KEY
-                        PAPERCLIP_MANAGED_OPENAI_API_KEY
-                        PAPERCLIP_MANAGED_GEMINI_API_KEY
-                        PAPERCLIP_MANAGED_OPENROUTER_API_KEY
-                      For backward compatibility, PAPERCLIP_MANAGED_INFERENCE_API_KEY is also supported.
-                    properties:
-                      name:
-                        default: ""
-                        description: |-
-                          Name of the referent.
-                          This field is effectively required, but due to backwards compatibility is
-                          allowed to be empty. Instances of this type with an empty value here are
-                          almost certainly wrong.
-                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                        type: string
-                    type: object
-                    x-kubernetes-map-type: atomic
                 type: object
               auth:
                 description: Auth configures authentication settings.
