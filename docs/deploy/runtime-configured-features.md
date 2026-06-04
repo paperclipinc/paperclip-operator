@@ -80,3 +80,12 @@ provisioning.
 If you omit `spec.auth.adminUser`, the app's native first-admin (board-claim)
 flow takes over: in `authenticated` mode, the first human to authenticate can
 claim instance ownership. No operator configuration is required for that path.
+
+> Known limitation (authenticated mode): the bootstrap Job creates the admin
+> account, but the subsequent CEO-promotion step (`paperclipai auth
+> bootstrap-ceo`) can fail. The app CLI reads `deploymentMode` from
+> `config.json`, which `onboard --yes` writes as `local_trusted`, while the
+> server itself honors `PAPERCLIP_DEPLOYMENT_MODE=authenticated` from the
+> environment. Until the operator reconciles `config.json` (or the app CLI
+> honors the env override), prefer the native board-claim flow (omit
+> `spec.auth.adminUser`) for authenticated deployments.
