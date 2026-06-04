@@ -88,6 +88,49 @@ spec:
 `,
 		wantErrSubstring: "availability.replicas",
 	},
+	{
+		name: "deny: removed deployment.mode value (open)",
+		yaml: `apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata:
+  name: neg-mode-open
+spec:
+  image:
+    tag: v1.0.0
+  deployment:
+    mode: open
+`,
+		wantErrSubstring: "deployment.mode",
+	},
+	{
+		name: "deny: local_trusted with public exposure",
+		yaml: `apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata:
+  name: neg-localtrusted-public
+spec:
+  image:
+    tag: v1.0.0
+  deployment:
+    mode: local_trusted
+    exposure: public
+`,
+		wantErrSubstring: "exposure must be 'private'",
+	},
+	{
+		name: "deny: aws_secrets_manager provider without aws config",
+		yaml: `apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata:
+  name: neg-aws-no-config
+spec:
+  image:
+    tag: v1.0.0
+  secrets:
+    provider: aws_secrets_manager
+`,
+		wantErrSubstring: "spec.secrets.aws is required",
+	},
 }
 
 var _ = Describe("negative (schema and CEL deny paths)", Ordered, func() {
