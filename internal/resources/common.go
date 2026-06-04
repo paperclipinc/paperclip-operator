@@ -83,7 +83,7 @@ func StatefulSetReplicas(instance *paperclipv1alpha1.Instance) int32 {
 }
 
 // UseTCPProbes returns true when probes should use TCP instead of HTTP.
-// This is needed in authenticated/single-tenant mode where /api/health returns 403.
+// This is needed in authenticated mode where /api/health returns 403.
 func UseTCPProbes(instance *paperclipv1alpha1.Instance) bool {
 	probeType := instance.Spec.Probes.Type
 	if probeType == "tcp" {
@@ -92,9 +92,8 @@ func UseTCPProbes(instance *paperclipv1alpha1.Instance) bool {
 	if probeType == "http" {
 		return false
 	}
-	// "auto" or empty: use TCP for authenticated/single-tenant modes
-	mode := instance.Spec.Deployment.Mode
-	return mode == "authenticated" || mode == "single-tenant"
+	// "auto" or empty: authenticated mode returns 403 from /api/health, so use TCP.
+	return instance.Spec.Deployment.Mode == "authenticated"
 }
 
 // Labels returns the standard labels for a Instance resource.

@@ -279,6 +279,11 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		})
 	}
 
+	// Disable public self-service sign-up (former single-tenant behavior)
+	if instance.Spec.Auth.DisableSignUp {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_AUTH_DISABLE_SIGN_UP", Value: "true"})
+	}
+
 	// Secrets management master key
 	if instance.Spec.Secrets.MasterKeySecretRef != nil {
 		vars = append(vars, corev1.EnvVar{

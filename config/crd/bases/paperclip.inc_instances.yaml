@@ -299,8 +299,9 @@ spec:
                   adminUser:
                     description: |-
                       AdminUser configures the initial admin user that is created automatically
-                      when the instance is first deployed. If not set, the instance will show
-                      a setup screen requiring manual bootstrap.
+                      when the instance is first deployed. If not set, the app's first-admin
+                      (board-claim) flow lets the first human to authenticate claim ownership
+                      in authenticated mode.
                     properties:
                       email:
                         description: Email is the admin user's email address (used
@@ -363,6 +364,11 @@ spec:
                     required:
                     - credentialsSecretRef
                     type: object
+                  disableSignUp:
+                    description: |-
+                      DisableSignUp disables public self-service sign-up (the former
+                      "single-tenant" behavior). Maps to PAPERCLIP_AUTH_DISABLE_SIGN_UP.
+                    type: boolean
                   email:
                     description: Email configures email sending for verification and
                       password reset.
@@ -1894,12 +1900,14 @@ spec:
                     type: string
                   mode:
                     default: authenticated
-                    description: 'Mode sets the deployment mode: "open" (no auth),
-                      "authenticated" (login required), or "single-tenant".'
+                    description: |-
+                      Mode sets the deployment mode: "local_trusted" (loopback / no auth) or
+                      "authenticated" (login required). Matches Paperclip's DEPLOYMENT_MODES.
+                      To run authenticated without public self-service sign-up, set
+                      spec.auth.disableSignUp instead of a separate mode.
                     enum:
-                    - open
+                    - local_trusted
                     - authenticated
-                    - single-tenant
                     type: string
                   publicURL:
                     description: |-
@@ -1907,6 +1915,10 @@ spec:
                       Required when exposure is "public".
                     type: string
                 type: object
+                x-kubernetes-validations:
+                - message: spec.deployment.exposure must be 'private' when mode is
+                    'local_trusted'
+                  rule: self.mode != 'local_trusted' || self.exposure == 'private'
               env:
                 description: Env specifies additional environment variables for the
                   Paperclip container.
@@ -5791,7 +5803,7 @@ spec:
                     default: auto
                     description: |-
                       Type specifies the probe mechanism: "auto" (default), "http", or "tcp".
-                      "auto" uses HTTP probes in open mode and TCP probes in authenticated/single-tenant mode
+                      "auto" uses HTTP probes in local_trusted mode and TCP probes in authenticated mode
                       (where /api/health returns 403 without credentials).
                     enum:
                     - auto

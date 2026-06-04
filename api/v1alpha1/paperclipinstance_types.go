@@ -214,10 +214,14 @@ type AutoUpdateSpec struct {
 }
 
 // DeploymentSpec controls deployment mode and exposure.
+// +kubebuilder:validation:XValidation:rule="self.mode != 'local_trusted' || self.exposure == 'private'",message="spec.deployment.exposure must be 'private' when mode is 'local_trusted'"
 type DeploymentSpec struct {
-	// Mode sets the deployment mode: "open" (no auth), "authenticated" (login required), or "single-tenant".
+	// Mode sets the deployment mode: "local_trusted" (loopback / no auth) or
+	// "authenticated" (login required). Matches Paperclip's DEPLOYMENT_MODES.
+	// To run authenticated without public self-service sign-up, set
+	// spec.auth.disableSignUp instead of a separate mode.
 	// +kubebuilder:default="authenticated"
-	// +kubebuilder:validation:Enum=open;authenticated;"single-tenant"
+	// +kubebuilder:validation:Enum=local_trusted;authenticated
 	// +optional
 	Mode string `json:"mode,omitempty"`
 
@@ -292,10 +296,16 @@ type AuthSpec struct {
 	SecretRef *corev1.SecretKeySelector `json:"secretRef,omitempty"`
 
 	// AdminUser configures the initial admin user that is created automatically
-	// when the instance is first deployed. If not set, the instance will show
-	// a setup screen requiring manual bootstrap.
+	// when the instance is first deployed. If not set, the app's first-admin
+	// (board-claim) flow lets the first human to authenticate claim ownership
+	// in authenticated mode.
 	// +optional
 	AdminUser *AdminUserSpec `json:"adminUser,omitempty"`
+
+	// DisableSignUp disables public self-service sign-up (the former
+	// "single-tenant" behavior). Maps to PAPERCLIP_AUTH_DISABLE_SIGN_UP.
+	// +optional
+	DisableSignUp bool `json:"disableSignUp,omitempty"`
 
 	// Email configures email sending for verification and password reset.
 	// +optional
@@ -986,7 +996,7 @@ type AutoScalingSpec struct {
 // ProbesSpec configures health probes.
 type ProbesSpec struct {
 	// Type specifies the probe mechanism: "auto" (default), "http", or "tcp".
-	// "auto" uses HTTP probes in open mode and TCP probes in authenticated/single-tenant mode
+	// "auto" uses HTTP probes in local_trusted mode and TCP probes in authenticated mode
 	// (where /api/health returns 403 without credentials).
 	// +kubebuilder:default="auto"
 	// +kubebuilder:validation:Enum=auto;http;tcp
