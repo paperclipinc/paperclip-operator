@@ -391,6 +391,15 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		})
 	}
 
+	// E2B sandbox provider API key
+	if instance.Spec.Adapters.E2B != nil {
+		ref := instance.Spec.Adapters.E2B.APIKeySecretRef
+		vars = append(vars, corev1.EnvVar{
+			Name:      "E2B_API_KEY",
+			ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &ref},
+		})
+	}
+
 	// Cloud sandbox
 	vars = append(vars, buildCloudSandboxEnvVars(instance)...)
 

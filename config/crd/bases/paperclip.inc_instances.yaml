@@ -260,6 +260,41 @@ spec:
                             type: object
                         type: object
                     type: object
+                  e2b:
+                    description: |-
+                      E2B supplies the API key for the E2B sandbox provider. The provider must be
+                      enabled as a plugin and selected per-Environment in the Paperclip UI; the
+                      operator only wires E2B_API_KEY. (Modal and Cloudflare sandbox credentials
+                      are configured at runtime in the UI - see docs/deploy/runtime-configured-features.md.)
+                    properties:
+                      apiKeySecretRef:
+                        description: APIKeySecretRef references a Secret key holding
+                          the E2B API key.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    required:
+                    - apiKeySecretRef
+                    type: object
                 type: object
               auth:
                 description: Auth configures authentication settings.

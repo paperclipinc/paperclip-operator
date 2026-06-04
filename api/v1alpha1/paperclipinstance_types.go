@@ -483,6 +483,19 @@ type AdaptersSpec struct {
 	// CloudSandbox configures cloud-based agent execution in isolated Kubernetes pods.
 	// +optional
 	CloudSandbox *CloudSandboxSpec `json:"cloudSandbox,omitempty"`
+
+	// E2B supplies the API key for the E2B sandbox provider. The provider must be
+	// enabled as a plugin and selected per-Environment in the Paperclip UI; the
+	// operator only wires E2B_API_KEY. (Modal and Cloudflare sandbox credentials
+	// are configured at runtime in the UI - see docs/deploy/runtime-configured-features.md.)
+	// +optional
+	E2B *E2BSpec `json:"e2b,omitempty"`
+}
+
+// E2BSpec configures the E2B sandbox provider API key.
+type E2BSpec struct {
+	// APIKeySecretRef references a Secret key holding the E2B API key.
+	APIKeySecretRef corev1.SecretKeySelector `json:"apiKeySecretRef"`
 }
 
 // CloudSandboxSpec configures cloud sandbox execution for agent runtimes.

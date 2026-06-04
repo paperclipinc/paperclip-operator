@@ -156,3 +156,29 @@ func TestBuildStatefulSet_LocalEncryptedDefaultNoAWSEnv(t *testing.T) {
 		t.Error("AWS env must not appear for the default local provider")
 	}
 }
+
+// --- Task 6: E2B sandbox key ---
+
+func TestBuildStatefulSet_E2BKeyEnv(t *testing.T) {
+	inst := newTestInstance("p")
+	inst.Spec.Adapters.E2B = &paperclipv1alpha1.E2BSpec{
+		APIKeySecretRef: corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "e2b-secret"},
+			Key:                  "api-key",
+		},
+	}
+	e, ok := envEntry(containerEnv(inst), "E2B_API_KEY")
+	if !ok {
+		t.Fatal("expected E2B_API_KEY env from secret ref")
+	}
+	if e.ValueFrom == nil || e.ValueFrom.SecretKeyRef == nil ||
+		e.ValueFrom.SecretKeyRef.Name != "e2b-secret" || e.ValueFrom.SecretKeyRef.Key != "api-key" {
+		t.Fatalf("E2B_API_KEY not wired to secret ref: %+v", e)
+	}
+}
+
+func TestBuildStatefulSet_E2BOmittedByDefault(t *testing.T) {
+	if hasEnvName(containerEnv(newTestInstance("p")), "E2B_API_KEY") {
+		t.Error("E2B_API_KEY must be omitted when spec.adapters.e2b is unset")
+	}
+}
