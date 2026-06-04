@@ -33,6 +33,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -1312,7 +1313,7 @@ func (r *InstanceReconciler) reconcileAutoUpdate(ctx context.Context, instance *
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&paperclipv1alpha1.Instance{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
@@ -1321,13 +1322,31 @@ func (r *InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.Secret{}).
 		Owns(&networkingv1.Ingress{}).
-		Owns(&gatewayapiv1.HTTPRoute{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
-		Watches(&paperclipv1alpha1.PaperclipClusterDefaults{}, handler.EnqueueRequestsFromMapFunc(r.findInstancesForClusterDefaults)).
-		Named("instance").
-		Complete(r)
+		Watches(&paperclipv1alpha1.PaperclipClusterDefaults{}, handler.EnqueueRequestsFromMapFunc(r.findInstancesForClusterDefaults))
+
+	// Gateway API HTTPRoute is optional. Only watch it when the CRD is installed:
+	// owning a type whose CRD is absent makes its cache sync fail forever, which
+	// blocks this controller from ever starting its workers - i.e. the operator
+	// would silently reconcile nothing on clusters without Gateway API.
+	if gatewayAPIHTTPRouteAvailable(mgr) {
+		b = b.Owns(&gatewayapiv1.HTTPRoute{})
+	} else {
+		mgr.GetLogger().Info("Gateway API HTTPRoute CRD not found; HTTPRoute support disabled " +
+			"(install the gateway-api CRDs to enable spec.networking.httpRoute)")
+	}
+
+	return b.Named("instance").Complete(r)
+}
+
+// gatewayAPIHTTPRouteAvailable reports whether the gateway.networking.k8s.io/v1
+// HTTPRoute kind is registered on the API server.
+func gatewayAPIHTTPRouteAvailable(mgr ctrl.Manager) bool {
+	gk := schema.GroupKind{Group: gatewayapiv1.GroupName, Kind: "HTTPRoute"}
+	_, err := mgr.GetRESTMapper().RESTMapping(gk, gatewayapiv1.GroupVersion.Version)
+	return err == nil
 }
 
 // applyClusterDefaults fetches the cluster-scoped PaperclipClusterDefaults
