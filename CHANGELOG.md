@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/paperclipinc/paperclip-operator/compare/v0.12.0...v0.12.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **olm:** include PaperclipClusterDefaults and PaperclipSelfConfig CRDs in the bundle ([#71](https://github.com/paperclipinc/paperclip-operator/issues/71)) ([f1be2dd](https://github.com/paperclipinc/paperclip-operator/commit/f1be2ddf516e7b487a2d6d0e91af6b04f78f8eac))
+* **olm:** use the official Paperclip logo for the bundle icon ([#69](https://github.com/paperclipinc/paperclip-operator/issues/69)) ([b53cc5e](https://github.com/paperclipinc/paperclip-operator/commit/b53cc5edba653e3896a8b5765a046ac07fdc8e2f))
+
 ## [0.12.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.11.2...v0.12.0) (2026-06-03)
 
 
