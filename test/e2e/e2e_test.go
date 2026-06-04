@@ -257,17 +257,181 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
+	})
 
-		// TODO: Customize the e2e test suite with scenarios specific to your project.
-		// Consider applying sample/CR(s) and check their status and/or verifying
-		// the reconciliation by using the metrics, i.e.:
-		// metricsOutput := getMetricsOutput()
-		// Expect(metricsOutput).To(ContainSubstring(
-		//    fmt.Sprintf(`controller_runtime_reconcile_total{controller="%s",result="success"} 1`,
-		//    strings.ToLower(<Kind>),
-		// ))
+	// Instance lifecycle exercises a real Paperclip app boot driven by the
+	// operator, plus rendering of the realigned config surface. Runs inside the
+	// Ordered Describe so the controller deployed in BeforeAll is available.
+	Context("Instance lifecycle", func() {
+		const instNS = "paperclip-e2e"
+		// The app registry publishes only `latest` + `sha-*` tags (no semver image
+		// tags), and the operator forbids :latest, so we pin a sha tag.
+		const appImage = "ghcr.io/paperclipai/paperclip:sha-244a5b8"
+
+		BeforeAll(func() {
+			By("pre-pulling and loading the Paperclip app image into kind")
+			_, err := utils.Run(exec.Command("docker", "pull", appImage))
+			Expect(err).NotTo(HaveOccurred(), "Failed to pull the Paperclip app image")
+			Expect(utils.LoadImageToKindClusterWithName(appImage)).To(Succeed(),
+				"Failed to load the app image into kind")
+
+			By("creating the instance namespace (unrestricted so the data-relabel init container may run)")
+			_, _ = utils.Run(exec.Command("kubectl", "create", "ns", instNS))
+		})
+
+		dumpInstanceDiagnostics := func() {
+			for _, args := range [][]string{
+				{"get", "all,instance,pvc", "-n", instNS, "-o", "wide"},
+				{"describe", "statefulset", "-n", instNS},
+				{"describe", "pods", "-n", instNS},
+				{"get", "events", "-n", instNS, "--sort-by=.lastTimestamp"},
+			} {
+				out, _ := utils.Run(exec.Command("kubectl", args...))
+				_, _ = fmt.Fprintf(GinkgoWriter, "\n$ kubectl %v\n%s\n", args, out)
+			}
+			// app + db pod logs (best effort)
+			for _, sel := range []string{"app.kubernetes.io/instance=e2e-boot", "app.kubernetes.io/instance=e2e-feat"} {
+				out, _ := utils.Run(exec.Command("kubectl", "logs", "-l", sel, "-n", instNS,
+					"--all-containers", "--tail=80", "--prefix"))
+				_, _ = fmt.Fprintf(GinkgoWriter, "\n$ kubectl logs -l %s\n%s\n", sel, out)
+			}
+		}
+
+		AfterEach(func() {
+			if CurrentSpecReport().Failed() {
+				dumpInstanceDiagnostics()
+			}
+		})
+
+		AfterAll(func() {
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "ns", instNS, "--wait=false"))
+		})
+
+		It("boots a managed-DB authenticated instance to Ready", func() {
+			By("applying auth secrets and the Instance")
+			applyManifest(fmt.Sprintf(`
+apiVersion: v1
+kind: Secret
+metadata: {name: e2e-auth, namespace: %[1]s}
+stringData: {BETTER_AUTH_SECRET: e2e-better-auth-secret-value-0123456789}
+---
+apiVersion: v1
+kind: Secret
+metadata: {name: e2e-admin, namespace: %[1]s}
+stringData: {password: e2e-admin-Passw0rd!}
+---
+apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata: {name: e2e-boot, namespace: %[1]s}
+spec:
+  image: {repository: ghcr.io/paperclipai/paperclip, tag: sha-244a5b8}
+  deployment: {mode: authenticated, exposure: private}
+  database: {mode: managed, managed: {storageSize: 1Gi}}
+  auth:
+    secretRef: {name: e2e-auth, key: BETTER_AUTH_SECRET}
+    adminUser:
+      email: admin@example.com
+      passwordSecretRef: {name: e2e-admin, key: password}
+  storage: {persistence: {enabled: true, size: 1Gi}}
+`, instNS))
+
+			By("waiting for the managed Postgres StatefulSet to be ready")
+			Eventually(stsReady(instNS, "e2e-boot-db"), 8*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("waiting for the Paperclip app StatefulSet to be ready (TCP probe in authenticated mode)")
+			Eventually(stsReady(instNS, "e2e-boot"), 8*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("asserting the realigned env is present and the removed config is absent")
+			env := stsEnvNames(instNS, "e2e-boot")
+			Expect(env).To(ContainSubstring("PAPERCLIP_BIND"))
+			Expect(env).To(ContainSubstring("PAPERCLIP_DEPLOYMENT_MODE"))
+			Expect(env).NotTo(ContainSubstring("PAPERCLIP_RATE_LIMIT_REDIS_URL"))
+			Expect(env).NotTo(ContainSubstring("PAPERCLIP_MANAGED_"))
+
+			By("asserting no managed Redis resources were created")
+			_, err := utils.Run(exec.Command("kubectl", "get", "statefulset", "e2e-boot-redis", "-n", instNS))
+			Expect(err).To(HaveOccurred(), "no Redis StatefulSet should exist")
+
+			By("waiting for the admin bootstrap Job to complete")
+			Eventually(jobSucceeded(instNS, "e2e-boot-bootstrap"), 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
+
+		It("renders env for AWS Secrets Manager, E2B, and app-native backup", func() {
+			By("applying a feature-exercising Instance (embedded DB so no second Postgres)")
+			applyManifest(fmt.Sprintf(`
+apiVersion: v1
+kind: Secret
+metadata: {name: e2e-e2b, namespace: %[1]s}
+stringData: {E2B_API_KEY: e2b_dummy_key}
+---
+apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata: {name: e2e-feat, namespace: %[1]s}
+spec:
+  image: {repository: ghcr.io/paperclipai/paperclip, tag: sha-244a5b8}
+  deployment: {mode: local_trusted, exposure: private}
+  database: {mode: embedded}
+  secrets:
+    provider: aws_secrets_manager
+    aws: {region: eu-central-1, kmsKeyID: arn:aws:kms:eu-central-1:111:key/abc, deploymentID: e2e}
+  adapters:
+    e2b: {apiKeySecretRef: {name: e2e-e2b, key: E2B_API_KEY}}
+  backup:
+    appNative: {enabled: true, intervalMinutes: 30, retentionDays: 5}
+  storage: {persistence: {enabled: true, size: 1Gi}}
+`, instNS))
+
+			By("waiting for the operator to render the StatefulSet with the new env")
+			Eventually(func(g Gomega) {
+				env := stsEnvNames(instNS, "e2e-feat")
+				g.Expect(env).To(ContainSubstring("PAPERCLIP_SECRETS_PROVIDER"))
+				g.Expect(env).To(ContainSubstring("PAPERCLIP_SECRETS_AWS_REGION"))
+				g.Expect(env).To(ContainSubstring("E2B_API_KEY"))
+				g.Expect(env).To(ContainSubstring("PAPERCLIP_DB_BACKUP_ENABLED"))
+			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+		})
 	})
 })
+
+// applyManifest writes the given YAML to a temp file and applies it.
+func applyManifest(yaml string) {
+	f, err := os.CreateTemp("", "e2e-*.yaml")
+	Expect(err).NotTo(HaveOccurred())
+	defer func() { _ = os.Remove(f.Name()) }()
+	_, err = f.WriteString(yaml)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(f.Close()).To(Succeed())
+	out, err := utils.Run(exec.Command("kubectl", "apply", "-f", f.Name()))
+	Expect(err).NotTo(HaveOccurred(), "apply failed: %s", out)
+}
+
+// stsReady returns a Gomega assertion that the named StatefulSet has >=1 ready replica.
+func stsReady(ns, name string) func(Gomega) {
+	return func(g Gomega) {
+		out, err := utils.Run(exec.Command("kubectl", "get", "statefulset", name, "-n", ns,
+			"-o", "jsonpath={.status.readyReplicas}"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(out).To(Equal("1"), "StatefulSet %s not ready yet", name)
+	}
+}
+
+// stsEnvNames returns the space-separated env var names of the primary container.
+func stsEnvNames(ns, name string) string {
+	out, err := utils.Run(exec.Command("kubectl", "get", "statefulset", name, "-n", ns,
+		"-o", "jsonpath={.spec.template.spec.containers[0].env[*].name}"))
+	Expect(err).NotTo(HaveOccurred())
+	return out
+}
+
+// jobSucceeded returns a Gomega assertion that the named Job has completed.
+func jobSucceeded(ns, name string) func(Gomega) {
+	return func(g Gomega) {
+		out, err := utils.Run(exec.Command("kubectl", "get", "job", name, "-n", ns,
+			"-o", "jsonpath={.status.succeeded}"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(out).To(Equal("1"), "Job %s not complete yet", name)
+	}
+}
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
 // It uses the Kubernetes TokenRequest API to generate a token by directly sending a request
