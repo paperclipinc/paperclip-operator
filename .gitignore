@@ -30,3 +30,6 @@ go.work
 docs-site/.venv/
 docs-site/site/
 docs-site/__pycache__/
+
+# Build installer output
+/dist/

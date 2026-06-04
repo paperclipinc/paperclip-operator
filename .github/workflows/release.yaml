@@ -94,6 +94,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.ref_name }}" sbom.spdx.json --clobber
 
+      - name: Generate and upload install.yaml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          make kustomize
+          IMAGE="${{ steps.docker-image.outputs.name }}:${{ github.ref_name }}"
+          (cd config/manager && "$GITHUB_WORKSPACE/bin/kustomize" edit set image controller="$IMAGE")
+          make build-installer
+          gh release upload "${{ github.ref_name }}" dist/install.yaml --clobber
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
