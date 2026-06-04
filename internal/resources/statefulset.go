@@ -536,15 +536,17 @@ func buildAuthEmailAndOAuthEnvVars(instance *paperclipv1alpha1.Instance) []corev
 func allowedHostnames(instance *paperclipv1alpha1.Instance) []string {
 	svc := ServiceName(instance)
 	ns := instance.Namespace
-	hosts := []string{
+	extra := instance.Spec.Deployment.AllowedHostnames
+	hosts := make([]string, 0, 6+len(extra))
+	hosts = append(hosts,
 		"localhost",
 		"127.0.0.1",
 		svc,
-		svc + "." + ns,
-		svc + "." + ns + ".svc",
-		svc + "." + ns + ".svc.cluster.local",
-	}
-	hosts = append(hosts, instance.Spec.Deployment.AllowedHostnames...)
+		svc+"."+ns,
+		svc+"."+ns+".svc",
+		svc+"."+ns+".svc.cluster.local",
+	)
+	hosts = append(hosts, extra...)
 
 	seen := make(map[string]bool, len(hosts))
 	out := make([]string, 0, len(hosts))
