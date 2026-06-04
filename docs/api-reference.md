@@ -15,6 +15,28 @@ Package v1alpha1 contains API Schema definitions for the paperclip v1alpha1 API 
 
 
 
+#### AWSSecretsManagerSpec
+
+
+
+AWSSecretsManagerSpec configures the AWS Secrets Manager secrets provider.
+
+
+
+_Appears in:_
+- [SecretsSpec](#secretsspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `region` _string_ | Region is the AWS region of the secrets and KMS key. |  |  |
+| `kmsKeyID` _string_ | KMSKeyID is the KMS key (id or ARN) used to encrypt secrets. |  |  |
+| `deploymentID` _string_ | DeploymentID namespaces secrets for this deployment. |  |  |
+| `prefix` _string_ | Prefix is the secret name prefix. | paperclip | Optional: \{\} <br /> |
+| `environment` _string_ | Environment is an optional environment label applied to stored secrets. |  | Optional: \{\} <br /> |
+| `endpoint` _string_ | Endpoint overrides the AWS Secrets Manager endpoint (for VPC endpoints or testing). |  | Optional: \{\} <br /> |
+| `deleteRecoveryDays` _integer_ | DeleteRecoveryDays is the AWS recovery window (in days) for deleted secrets. | 30 | Optional: \{\} <br /> |
+
+
 #### AdaptersSpec
 
 
@@ -30,9 +52,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `apiKeysSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | APIKeys references Secrets containing LLM provider API keys.<br />The Secret should contain keys like ANTHROPIC_API_KEY, OPENAI_API_KEY, etc. |  | Optional: \{\} <br /> |
 | `cloudSandbox` _[CloudSandboxSpec](#cloudsandboxspec)_ | CloudSandbox configures cloud-based agent execution in isolated Kubernetes pods. |  | Optional: \{\} <br /> |
-| `managedInferenceSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | ManagedInferenceSecretRef references a Secret containing platform LLM API keys.<br />The Secret should contain one or more of these keys:<br />  PAPERCLIP_MANAGED_ANTHROPIC_API_KEY<br />  PAPERCLIP_MANAGED_OPENAI_API_KEY<br />  PAPERCLIP_MANAGED_GEMINI_API_KEY<br />  PAPERCLIP_MANAGED_OPENROUTER_API_KEY<br />For backward compatibility, PAPERCLIP_MANAGED_INFERENCE_API_KEY is also supported. |  | Optional: \{\} <br /> |
-| `managedInferenceProvider` _string_ | ManagedInferenceProvider is the LLM provider for the legacy single-key mode.<br />Ignored when per-provider keys are used. | anthropic | Optional: \{\} <br /> |
-| `managedInferenceModel` _string_ | ManagedInferenceModel is the default model for managed inference. | claude-sonnet-4-6 | Optional: \{\} <br /> |
+| `e2b` _[E2BSpec](#e2bspec)_ | E2B supplies the API key for the E2B sandbox provider. The provider must be<br />enabled as a plugin and selected per-Environment in the Paperclip UI; the<br />operator only wires E2B_API_KEY. (Modal and Cloudflare sandbox credentials<br />are configured at runtime in the UI - see docs/deploy/runtime-configured-features.md.) |  | Optional: \{\} <br /> |
 
 
 #### AdminUserSpec
@@ -51,6 +71,25 @@ _Appears in:_
 | `email` _string_ | Email is the admin user's email address (used as login). |  |  |
 | `name` _string_ | Name is the admin user's display name. | Admin | Optional: \{\} <br /> |
 | `passwordSecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | PasswordSecretRef references a Secret containing the admin password. |  |  |
+
+
+#### AppNativeBackupSpec
+
+
+
+AppNativeBackupSpec configures Paperclip's built-in database backups
+(PAPERCLIP_DB_BACKUP_*).
+
+
+
+_Appears in:_
+- [BackupSpec](#backupspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled toggles app-native backups. Maps to PAPERCLIP_DB_BACKUP_ENABLED.<br />When unset, the app default (enabled) applies. |  | Optional: \{\} <br /> |
+| `intervalMinutes` _integer_ | IntervalMinutes between backups. Maps to PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES. |  | Optional: \{\} <br /> |
+| `retentionDays` _integer_ | RetentionDays for local backups. Maps to PAPERCLIP_DB_BACKUP_RETENTION_DAYS. |  | Optional: \{\} <br /> |
 
 
 #### AuthEmailSpec
@@ -85,7 +124,8 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `secretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | SecretRef references a Secret containing the BETTER_AUTH_SECRET key.<br />Required when deployment mode is "authenticated". |  | Optional: \{\} <br /> |
-| `adminUser` _[AdminUserSpec](#adminuserspec)_ | AdminUser configures the initial admin user that is created automatically<br />when the instance is first deployed. If not set, the instance will show<br />a setup screen requiring manual bootstrap. |  | Optional: \{\} <br /> |
+| `adminUser` _[AdminUserSpec](#adminuserspec)_ | AdminUser configures the initial admin user that is created automatically<br />when the instance is first deployed. If not set, the app's first-admin<br />(board-claim) flow lets the first human to authenticate claim ownership<br />in authenticated mode. |  | Optional: \{\} <br /> |
+| `disableSignUp` _boolean_ | DisableSignUp disables public self-service sign-up (the former<br />"single-tenant" behavior). Maps to PAPERCLIP_AUTH_DISABLE_SIGN_UP. |  | Optional: \{\} <br /> |
 | `email` _[AuthEmailSpec](#authemailspec)_ | Email configures email sending for verification and password reset. |  | Optional: \{\} <br /> |
 | `google` _[OAuthProviderSpec](#oauthproviderspec)_ | Google configures Google OAuth sign-in.<br />The referenced Secret must contain GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET keys. |  | Optional: \{\} <br /> |
 | `apple` _[OAuthProviderSpec](#oauthproviderspec)_ | Apple configures Apple OAuth sign-in.<br />The referenced Secret must contain APPLE_CLIENT_ID and APPLE_CLIENT_SECRET keys. |  | Optional: \{\} <br /> |
@@ -174,7 +214,9 @@ _Appears in:_
 
 
 
-BackupSpec configures periodic backup to S3.
+BackupSpec configures database backups. Two complementary mechanisms:
+the operator's pg_dump -> S3 CronJob (Schedule/S3, for managed/external
+PostgreSQL) and Paperclip's built-in local-dir backups (AppNative).
 
 
 
@@ -183,9 +225,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `schedule` _string_ | Schedule is a cron expression for backup scheduling. |  |  |
+| `schedule` _string_ | Schedule is a cron expression for the operator pg_dump -> S3 backup CronJob.<br />Omit to use only app-native backups. |  | Optional: \{\} <br /> |
 | `s3` _[BackupS3Spec](#backups3spec)_ | S3 configures the S3 backup destination. Uses ObjectStorage config if not specified. |  | Optional: \{\} <br /> |
-| `retentionDays` _integer_ | RetentionDays specifies how many days to retain backups. | 30 | Optional: \{\} <br /> |
+| `retentionDays` _integer_ | RetentionDays specifies how many days to retain operator (S3) backups. | 30 | Optional: \{\} <br /> |
+| `appNative` _[AppNativeBackupSpec](#appnativebackupspec)_ | AppNative configures Paperclip's built-in database backups, written to a<br />local directory under the data PVC. Complementary to the operator's S3<br />CronJob; durable only when spec.storage.persistence is enabled. |  | Optional: \{\} <br /> |
 
 
 #### CloudSandboxPersistenceSpec
@@ -286,10 +329,26 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `mode` _string_ | Mode sets the deployment mode: "open" (no auth), "authenticated" (login required), or "single-tenant". | authenticated | Enum: [open authenticated single-tenant] <br />Optional: \{\} <br /> |
+| `mode` _string_ | Mode sets the deployment mode: "local_trusted" (loopback / no auth) or<br />"authenticated" (login required). Matches Paperclip's DEPLOYMENT_MODES.<br />To run authenticated without public self-service sign-up, set<br />spec.auth.disableSignUp instead of a separate mode. | authenticated | Enum: [local_trusted authenticated] <br />Optional: \{\} <br /> |
 | `exposure` _string_ | Exposure controls network exposure: "private" (ClusterIP only) or "public" (Ingress/LoadBalancer). | private | Enum: [private public] <br />Optional: \{\} <br /> |
 | `publicURL` _string_ | PublicURL is the externally-reachable URL for the Paperclip instance.<br />Required when exposure is "public". |  | Optional: \{\} <br /> |
 | `allowedHostnames` _string array_ | AllowedHostnames is a list of allowed hostnames for CORS. |  | Optional: \{\} <br /> |
+
+
+#### E2BSpec
+
+
+
+E2BSpec configures the E2B sandbox provider API key.
+
+
+
+_Appears in:_
+- [AdaptersSpec](#adaptersspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiKeySecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | APIKeySecretRef references a Secret key holding the E2B API key. |  |  |
 
 
 #### GrafanaDashboardSpec
@@ -481,7 +540,6 @@ _Appears in:_
 | `secrets` _[SecretsSpec](#secretsspec)_ | Secrets configures the Paperclip secrets management system. |  | Optional: \{\} <br /> |
 | `storage` _[StorageSpec](#storagespec)_ | Storage configures persistent storage for the Paperclip data directory. |  | Optional: \{\} <br /> |
 | `objectStorage` _[ObjectStorageSpec](#objectstoragespec)_ | ObjectStorage configures S3-compatible object storage for multi-replica deployments. |  | Optional: \{\} <br /> |
-| `redis` _[RedisSpec](#redisspec)_ | Redis configures Redis for rate limiting and caching in multi-replica deployments. |  | Optional: \{\} <br /> |
 | `heartbeat` _[HeartbeatSpec](#heartbeatspec)_ | Heartbeat configures the agent heartbeat scheduler. |  | Optional: \{\} <br /> |
 | `adapters` _[AdaptersSpec](#adaptersspec)_ | Adapters configures agent runtime adapters. |  | Optional: \{\} <br /> |
 | `connections` _[ConnectionsSpec](#connectionsspec)_ | Connections configures third-party OAuth provider credentials for<br />the Paperclip connections system (GitHub, GitLab, Slack, etc.). |  | Optional: \{\} <br /> |
@@ -540,25 +598,6 @@ _Appears in:_
 | `storageSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#quantity-resource-api)_ | StorageSize is the PVC size for PostgreSQL data. | 10Gi | Optional: \{\} <br /> |
 | `storageClass` _string_ | StorageClass is the storage class for the PostgreSQL PVC. |  | Optional: \{\} <br /> |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies compute resources for the PostgreSQL container. |  | Optional: \{\} <br /> |
-
-
-#### ManagedRedisSpec
-
-
-
-ManagedRedisSpec configures the operator-managed Redis instance.
-
-
-
-_Appears in:_
-- [RedisSpec](#redisspec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `image` _string_ | Image is the Redis container image. | redis:7-alpine | Optional: \{\} <br /> |
-| `storageSize` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#quantity-resource-api)_ | StorageSize is the PVC size for Redis data. Defaults to 1Gi. | 1Gi | Optional: \{\} <br /> |
-| `storageClass` _string_ | StorageClass is the storage class for the Redis PVC. |  | Optional: \{\} <br /> |
-| `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies compute resources for the Redis container. |  | Optional: \{\} <br /> |
 
 
 
@@ -734,7 +773,7 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `image` _[ImageSpec](#imagespec)_ | Image is the default container image configuration applied to instances<br />where the corresponding instance fields are unset. Each sub-field is<br />merged independently (e.g. a cluster-default tag still applies even when<br />the instance sets its own repository). |  | Optional: \{\} <br /> |
-| `storageClass` _string_ | StorageClass is the default storage class applied to the Paperclip data<br />PVC, the managed PostgreSQL PVC, and the managed Redis PVC when those<br />fields are unset on the instance. |  | Optional: \{\} <br /> |
+| `storageClass` _string_ | StorageClass is the default storage class applied to the Paperclip data<br />PVC, the managed PostgreSQL PVC when those<br />fields are unset on the instance. |  | Optional: \{\} <br /> |
 | `databaseMode` _string_ | DatabaseMode is the default database mode ("embedded", "external", or<br />"managed") applied to instances where spec.database.mode is unset. |  | Enum: [embedded external managed] <br />Optional: \{\} <br /> |
 | `observability` _[ObservabilitySpec](#observabilityspec)_ | Observability configures cluster-wide observability defaults that are<br />merged into instances where the corresponding fields are unset. |  | Optional: \{\} <br /> |
 | `networking` _[NetworkingSpec](#networkingspec)_ | Networking configures cluster-wide networking defaults. Currently only<br />the default Service type is merged when the instance leaves it unset. |  | Optional: \{\} <br /> |
@@ -857,7 +896,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `type` _string_ | Type specifies the probe mechanism: "auto" (default), "http", or "tcp".<br />"auto" uses HTTP probes in open mode and TCP probes in authenticated/single-tenant mode<br />(where /api/health returns 403 without credentials). | auto | Enum: [auto http tcp] <br />Optional: \{\} <br /> |
+| `type` _string_ | Type specifies the probe mechanism: "auto" (default), "http", or "tcp".<br />"auto" uses HTTP probes in local_trusted mode and TCP probes in authenticated mode<br />(where /api/health returns 403 without credentials). | auto | Enum: [auto http tcp] <br />Optional: \{\} <br /> |
 | `liveness` _[ProbeSpec](#probespec)_ | Liveness configures the liveness probe against /api/health. |  | Optional: \{\} <br /> |
 | `readiness` _[ProbeSpec](#probespec)_ | Readiness configures the readiness probe against /api/health. |  | Optional: \{\} <br /> |
 | `startup` _[ProbeSpec](#probespec)_ | Startup configures the startup probe against /api/health. |  | Optional: \{\} <br /> |
@@ -898,25 +937,6 @@ _Appears in:_
 | `serviceAccountAnnotations` _object (keys:string, values:string)_ | ServiceAccountAnnotations specifies additional annotations for the ServiceAccount. |  | Optional: \{\} <br /> |
 
 
-#### RedisSpec
-
-
-
-RedisSpec configures Redis for rate limiting and caching.
-
-
-
-_Appears in:_
-- [InstanceSpec](#instancespec)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `mode` _string_ | Mode selects the Redis mode: "managed" (operator-provisioned) or "external" (user-provided URL). | managed | Enum: [managed external] <br />Optional: \{\} <br /> |
-| `externalURL` _string_ | ExternalURL is the Redis connection string for external mode (e.g. "redis://host:6379").<br />WARNING: This value is stored in plaintext in the CRD spec (etcd). If the URL contains<br />credentials, use ExternalURLSecretRef instead to reference a Secret. |  | Optional: \{\} <br /> |
-| `externalURLSecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | ExternalURLSecretRef references a Secret key containing the Redis URL. |  | Optional: \{\} <br /> |
-| `managed` _[ManagedRedisSpec](#managedredisspec)_ | Managed configures the operator-managed Redis instance. |  | Optional: \{\} <br /> |
-
-
 #### SecretsSpec
 
 
@@ -930,6 +950,8 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
+| `provider` _string_ | Provider selects the secrets backend. "local_encrypted" (default) encrypts<br />secrets with the master key; "aws_secrets_manager" stores them in AWS<br />Secrets Manager. Maps to PAPERCLIP_SECRETS_PROVIDER. | local_encrypted | Enum: [local_encrypted aws_secrets_manager] <br />Optional: \{\} <br /> |
+| `aws` _[AWSSecretsManagerSpec](#awssecretsmanagerspec)_ | AWS configures the AWS Secrets Manager provider. AWS credentials are sourced<br />from the standard AWS SDK credential chain - use IRSA via<br />spec.security.rbac.serviceAccountAnnotations rather than injecting keys. |  | Optional: \{\} <br /> |
 | `masterKeySecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | MasterKeySecretRef references a Secret containing the master encryption key. |  | Optional: \{\} <br /> |
 | `strictMode` _boolean_ | StrictMode requires all sensitive values to use encrypted references. |  | Optional: \{\} <br /> |
 

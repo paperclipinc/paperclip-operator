@@ -37,6 +37,35 @@ spec:
   adapters:
     apiKeysSecretRef:
       name: paperclip-api-keys
+    # E2B sandbox provider API key (enable the @paperclipai/plugin-e2b plugin
+    # and select E2B per-Environment in the UI; the operator only wires the key):
+    # e2b:
+    #   apiKeySecretRef:
+    #     name: paperclip-e2b
+    #     key: E2B_API_KEY
+
+  # Store secrets in AWS Secrets Manager instead of the local master key.
+  # AWS credentials come from the SDK chain (use IRSA via
+  # security.rbac.serviceAccountAnnotations); the operator injects no keys.
+  # secrets:
+  #   provider: aws_secrets_manager
+  #   aws:
+  #     region: eu-central-1
+  #     kmsKeyID: arn:aws:kms:eu-central-1:123456789012:key/abcd
+  #     deploymentID: my-paperclip-prod
+
+  # Paperclip's built-in DB backups (local dir under the data PVC). Complementary
+  # to the operator pg_dump -> S3 CronJob (spec.backup.schedule).
+  # backup:
+  #   appNative:
+  #     enabled: true
+  #     intervalMinutes: 60
+  #     retentionDays: 7
+
+  # To disable public self-service sign-up (former "single-tenant" behavior),
+  # use authenticated mode plus:
+  # auth:
+  #   disableSignUp: true
 
   # connections:
   #   credentialsSecretRef:

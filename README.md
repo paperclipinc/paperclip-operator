@@ -48,7 +48,7 @@ The operator reconciles this into a fully managed stack of Kubernetes resources:
 | **Observable** | Built-in metrics | 7 Prometheus metrics, ServiceMonitor integration, configurable log levels |
 | **Scalable** | Auto-scaling | HPA with CPU/memory targets, PodDisruptionBudgets, topology spread constraints |
 | **Smart Probes** | Mode-aware health checks | Automatically uses TCP probes in authenticated mode (where `/api/health` returns 403) |
-| **Storage** | S3 + Redis | S3/MinIO/R2 for multi-replica file storage, managed or external Redis for rate limiting |
+| **Storage** | S3 object storage | S3/MinIO/R2 for multi-replica file storage |
 | **Backup** | S3-backed snapshots | Scheduled backups with configurable retention, point-in-time restore into new instances |
 | **Secrets** | Encrypted secrets | Paperclip's built-in secrets management with master key support and strict mode |
 | **Connections** | OAuth integrations | GitHub, GitLab, Slack, and more via the Paperclip connections system |
@@ -92,7 +92,6 @@ The operator reconciles this into a fully managed stack of Kubernetes resources:
 |  Service (ClusterIP/LoadBalancer/NodePort)                   |
 |                                                              |
 |  [Managed PostgreSQL StatefulSet + Service + PVC] (optional) |
-|  [Managed Redis StatefulSet + Service + PVC]      (optional) |
 +--------------------------------------------------------------+
 ```
 
@@ -207,7 +206,7 @@ Control authentication and network exposure:
 ```yaml
 spec:
   deployment:
-    mode: authenticated        # "open", "authenticated", or "single-tenant"
+    mode: authenticated        # "local_trusted" or "authenticated"
     exposure: private          # "private" (ClusterIP) or "public" (Ingress/LB)
     publicURL: https://paperclip.example.com   # required when exposure is "public"
     allowedHostnames:
@@ -216,9 +215,8 @@ spec:
 
 | Mode | Description |
 |------|-------------|
-| `authenticated` (default) | Login required via Better Auth. Requires `BETTER_AUTH_SECRET`. |
-| `open` | No authentication. The operator binds to loopback (`HOST=127.0.0.1`) for safety. |
-| `single-tenant` | Single-user mode with authentication. |
+| `authenticated` (default) | Login required via Better Auth. Requires `BETTER_AUTH_SECRET`. To run authenticated without a public sign-up page, set `spec.auth.disableSignUp: true` (maps to `PAPERCLIP_AUTH_DISABLE_SIGN_UP`). |
+| `local_trusted` | No authentication, intended for trusted local/loopback access. Requires `exposure: private`. |
 
 | Exposure | Description |
 |----------|-------------|
@@ -282,7 +280,7 @@ spec:
 
 #### Better Auth secret
 
-Required for `authenticated` and `single-tenant` modes:
+Required for `authenticated` mode:
 
 ```yaml
 spec:
@@ -291,6 +289,20 @@ spec:
       name: paperclip-auth
       key: BETTER_AUTH_SECRET
 ```
+
+#### Disabling public sign-up
+
+To run in `authenticated` mode without a public registration page, disable sign-up:
+
+```yaml
+spec:
+  deployment:
+    mode: authenticated
+  auth:
+    disableSignUp: true   # maps to PAPERCLIP_AUTH_DISABLE_SIGN_UP, default false
+```
+
+This is the recommended replacement for the previous `single-tenant` mode. Combine it with `adminUser` bootstrap to provision the only account.
 
 #### Automatic admin user bootstrap
 
@@ -352,9 +364,29 @@ spec:
     strictMode: true    # require all sensitive values to use encrypted references
 ```
 
+#### Secrets provider
+
+The secrets vault backend is selectable via `spec.secrets.provider`. The default is `local_encrypted` (the built-in encrypted store above). To store secrets in AWS Secrets Manager instead, set the provider to `aws_secrets_manager` and configure `spec.secrets.aws`:
+
+```yaml
+spec:
+  secrets:
+    provider: aws_secrets_manager   # "local_encrypted" (default) or "aws_secrets_manager"
+    aws:
+      region: us-east-1             # required for AWS
+      kmsKeyID: alias/paperclip     # required, KMS key for encryption
+      deploymentID: prod            # required, isolates secrets per deployment
+      prefix: paperclip             # optional, default "paperclip"
+      environment: production       # optional
+      endpoint: ""                  # optional, custom endpoint
+      deleteRecoveryDays: 30        # optional, default 30
+```
+
+These map to `PAPERCLIP_SECRETS_PROVIDER` and the `PAPERCLIP_SECRETS_AWS_*` environment variables. AWS credentials are not injected by the operator; they are resolved through the AWS SDK credential chain, so use IRSA by adding the role annotation under `spec.security.rbac.serviceAccountAnnotations` (for example `eks.amazonaws.com/role-arn`).
+
 ### LLM API Keys
 
-Inject API keys for Anthropic, OpenAI, and other LLM providers from a Kubernetes Secret:
+Inject LLM provider API keys from a Kubernetes Secret via `spec.adapters.apiKeysSecretRef`:
 
 ```yaml
 spec:
@@ -364,23 +396,22 @@ spec:
       # Secret should contain: ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.
 ```
 
-### Managed Inference
+The keys (for example `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`) are passed straight through to the app. Paperclip discovers the available models for each provider automatically from the provider's API, so no model or provider needs to be configured on the operator.
 
-For platform-managed LLM access with per-provider API keys:
+### E2B Sandbox
+
+Supply an [E2B](https://e2b.dev) API key so agents can use E2B cloud sandboxes:
 
 ```yaml
 spec:
   adapters:
-    managedInferenceSecretRef:
-      name: paperclip-managed-keys
-      # Secret keys (one or more):
-      #   PAPERCLIP_MANAGED_ANTHROPIC_API_KEY
-      #   PAPERCLIP_MANAGED_OPENAI_API_KEY
-      #   PAPERCLIP_MANAGED_GEMINI_API_KEY
-      #   PAPERCLIP_MANAGED_OPENROUTER_API_KEY
-    managedInferenceProvider: anthropic       # default provider for legacy single-key mode
-    managedInferenceModel: claude-sonnet-4-6  # default model
+    e2b:
+      apiKeySecretRef:
+        name: paperclip-e2b
+        key: E2B_API_KEY
 ```
+
+This maps to the `E2B_API_KEY` environment variable. Other sandbox environments (Modal, Cloudflare, SSH) are not operator-configurable; they are set up at runtime in the Paperclip UI. See [Runtime-configured features](docs/deploy/runtime-configured-features.md) for details.
 
 ### Cloud Sandbox
 
@@ -495,47 +526,7 @@ spec:
       # Secret must contain S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY
 ```
 
-### Redis
-
-Required for rate limiting and caching in multi-replica deployments:
-
-```yaml
-spec:
-  redis:
-    mode: managed   # "managed" or "external"
-```
-
-#### Managed Redis
-
-```yaml
-spec:
-  redis:
-    mode: managed
-    managed:
-      image: redis:7-alpine   # default
-      storageSize: 1Gi        # default
-      storageClass: gp3       # optional
-      resources:
-        requests:
-          cpu: 100m
-          memory: 128Mi
-```
-
-The operator provisions a dedicated Redis StatefulSet, Service, and PVC.
-
-#### External Redis
-
-```yaml
-spec:
-  redis:
-    mode: external
-    # Option 1: connection string (avoid if it contains credentials)
-    externalURL: "redis://host:6379"
-    # Option 2: Secret reference (recommended)
-    externalURLSecretRef:
-      name: redis-credentials
-      key: REDIS_URL
-```
+> **Horizontal scaling:** Paperclip does not use Redis. Scaling out relies on a shared PostgreSQL database, shared object storage (S3/MinIO/R2) for files, and pod-0 heartbeat gating so only one replica runs the scheduler. Configure `database.mode: external` and `objectStorage` when running multiple replicas. The in-process rate limiter is per-pod by design.
 
 ### Heartbeat Scheduler
 
@@ -700,7 +691,7 @@ spec:
 
 | Probe Type | Behavior |
 |------------|----------|
-| `auto` (default) | HTTP probes (`GET /api/health`) in `open` mode, TCP probes (port 3100) in `authenticated`/`single-tenant` mode |
+| `auto` (default) | HTTP probes (`GET /api/health`) in `local_trusted` mode, TCP probes (port 3100) in `authenticated` mode |
 | `http` | Always use HTTP probes against `/api/health` |
 | `tcp` | Always use TCP probes against port 3100 |
 
@@ -743,7 +734,22 @@ spec:
         # Secret must contain AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
 ```
 
-If `backup.s3` is not set, the operator falls back to the `objectStorage` configuration.
+If `backup.s3` is not set, the operator falls back to the `objectStorage` configuration. The operator's `pg_dump` to S3 CronJob only runs when `spec.backup.schedule` is set.
+
+#### App-native database backup
+
+Paperclip can also run its own periodic database backups inside the app process. These write to a local directory under the `/paperclip` data PVC and are complementary to the operator's offsite `pg_dump` to S3 CronJob above:
+
+```yaml
+spec:
+  backup:
+    appNative:
+      enabled: true          # default: true, maps to PAPERCLIP_DB_BACKUP_ENABLED
+      intervalMinutes: 60    # default: 60, maps to PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES
+      retentionDays: 7       # default: 7, maps to PAPERCLIP_DB_BACKUP_RETENTION_DAYS
+```
+
+App-native backups are local-dir only (no offsite copy) and are only durable when `spec.storage.persistence.enabled` is true. Use the S3 CronJob for offsite snapshots.
 
 #### Restore from backup
 
@@ -860,7 +866,7 @@ spec:
         - 172.16.0.0/12
 ```
 
-When enabled, the operator creates a NetworkPolicy with a deny-all baseline and selective allow rules for DNS, HTTPS egress, and same-namespace ingress on the service port. The managed PostgreSQL and Redis pods get their own allow rules.
+When enabled, the operator creates a NetworkPolicy with a deny-all baseline and selective allow rules for DNS, HTTPS egress, and same-namespace ingress on the service port. The managed PostgreSQL pods get their own allow rules.
 
 ### Pod and Container Security Context
 
@@ -973,7 +979,7 @@ These behaviors are always applied -- no configuration needed:
 
 | Behavior | Details |
 |----------|---------|
-| `HOST=0.0.0.0` | Always set so Paperclip binds to all interfaces in the container |
+| `PAPERCLIP_BIND=custom` + `PAPERCLIP_BIND_HOST=0.0.0.0` | Always set so Paperclip binds to all interfaces in the container (replaces the legacy `HOST` variable) |
 | `SERVE_UI=true` | Always set so the web UI is served |
 | Heartbeat leader election | Only pod-0 runs the heartbeat scheduler in multi-replica deployments |
 | Config hash rollouts | Environment/config changes trigger rolling updates via SHA-256 hash annotation |
@@ -985,7 +991,7 @@ These behaviors are always applied -- no configuration needed:
 
 ## Production Deployment Example
 
-A full production deployment with external database, S3 storage, Redis, OAuth, Ingress with TLS, and monitoring:
+A full production deployment with external database, S3 storage, OAuth, Ingress with TLS, and monitoring:
 
 ```yaml
 apiVersion: paperclip.inc/v1alpha1
@@ -1048,12 +1054,6 @@ spec:
     region: us-east-1
     credentialsSecretRef:
       name: paperclip-s3
-
-  redis:
-    mode: external
-    externalURLSecretRef:
-      name: redis-credentials
-      key: REDIS_URL
 
   adapters:
     apiKeysSecretRef:

@@ -6,7 +6,7 @@ observability, and lifecycle management.
 
 It manages a single custom resource, `Instance` (short name `pci`), in the
 `paperclip.inc` API group. From one `Instance` the operator reconciles the
-server StatefulSet, Service, optional managed PostgreSQL and Redis,
+server StatefulSet, Service, optional managed PostgreSQL,
 persistence, networking (Ingress or Gateway API HTTPRoute), RBAC,
 NetworkPolicy, autoscaling, disruption budgets, backups, and observability
 resources.
@@ -15,7 +15,7 @@ resources.
 
 - Single-CR deployment of the Paperclip Node.js application (port 3100,
   health endpoint `/api/health`).
-- Managed or external PostgreSQL and Redis.
+- Managed or external PostgreSQL.
 - Persistent storage with optional S3-compatible object storage and scheduled
   backups.
 - Networking via Service plus optional Ingress or Gateway API HTTPRoute.
