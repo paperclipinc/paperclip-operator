@@ -1669,9 +1669,30 @@ spec:
               backup:
                 description: Backup configures periodic backup to S3-compatible storage.
                 properties:
+                  appNative:
+                    description: |-
+                      AppNative configures Paperclip's built-in database backups, written to a
+                      local directory under the data PVC. Complementary to the operator's S3
+                      CronJob; durable only when spec.storage.persistence is enabled.
+                    properties:
+                      enabled:
+                        description: |-
+                          Enabled toggles app-native backups. Maps to PAPERCLIP_DB_BACKUP_ENABLED.
+                          When unset, the app default (enabled) applies.
+                        type: boolean
+                      intervalMinutes:
+                        description: IntervalMinutes between backups. Maps to PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES.
+                        format: int32
+                        type: integer
+                      retentionDays:
+                        description: RetentionDays for local backups. Maps to PAPERCLIP_DB_BACKUP_RETENTION_DAYS.
+                        format: int32
+                        type: integer
+                    type: object
                   retentionDays:
                     default: 30
-                    description: RetentionDays specifies how many days to retain backups.
+                    description: RetentionDays specifies how many days to retain operator
+                      (S3) backups.
                     format: int32
                     type: integer
                   s3:
@@ -1709,10 +1730,10 @@ spec:
                     - bucket
                     type: object
                   schedule:
-                    description: Schedule is a cron expression for backup scheduling.
+                    description: |-
+                      Schedule is a cron expression for the operator pg_dump -> S3 backup CronJob.
+                      Omit to use only app-native backups.
                     type: string
-                required:
-                - schedule
                 type: object
               connections:
                 description: |-

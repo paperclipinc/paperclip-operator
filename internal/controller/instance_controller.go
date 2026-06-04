@@ -316,8 +316,9 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	// 11. Backup CronJob (optional)
-	if instance.Spec.Backup != nil {
+	// 11. Backup CronJob (optional; only the operator pg_dump -> S3 path needs a
+	// schedule - app-native backups are driven purely by env vars on the pod)
+	if instance.Spec.Backup != nil && instance.Spec.Backup.Schedule != "" {
 		if err := r.reconcileBackupCronJob(ctx, instance); err != nil {
 			return r.handleError(ctx, instance, "BackupCronJob", err)
 		}

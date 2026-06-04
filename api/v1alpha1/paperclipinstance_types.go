@@ -1028,19 +1028,46 @@ type ProbeSpec struct {
 	SuccessThreshold *int32 `json:"successThreshold,omitempty"`
 }
 
-// BackupSpec configures periodic backup to S3.
+// BackupSpec configures database backups. Two complementary mechanisms:
+// the operator's pg_dump -> S3 CronJob (Schedule/S3, for managed/external
+// PostgreSQL) and Paperclip's built-in local-dir backups (AppNative).
 type BackupSpec struct {
-	// Schedule is a cron expression for backup scheduling.
-	Schedule string `json:"schedule"`
+	// Schedule is a cron expression for the operator pg_dump -> S3 backup CronJob.
+	// Omit to use only app-native backups.
+	// +optional
+	Schedule string `json:"schedule,omitempty"`
 
 	// S3 configures the S3 backup destination. Uses ObjectStorage config if not specified.
 	// +optional
 	S3 *BackupS3Spec `json:"s3,omitempty"`
 
-	// RetentionDays specifies how many days to retain backups.
+	// RetentionDays specifies how many days to retain operator (S3) backups.
 	// +kubebuilder:default=30
 	// +optional
 	RetentionDays *int32 `json:"retentionDays,omitempty"`
+
+	// AppNative configures Paperclip's built-in database backups, written to a
+	// local directory under the data PVC. Complementary to the operator's S3
+	// CronJob; durable only when spec.storage.persistence is enabled.
+	// +optional
+	AppNative *AppNativeBackupSpec `json:"appNative,omitempty"`
+}
+
+// AppNativeBackupSpec configures Paperclip's built-in database backups
+// (PAPERCLIP_DB_BACKUP_*).
+type AppNativeBackupSpec struct {
+	// Enabled toggles app-native backups. Maps to PAPERCLIP_DB_BACKUP_ENABLED.
+	// When unset, the app default (enabled) applies.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// IntervalMinutes between backups. Maps to PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES.
+	// +optional
+	IntervalMinutes int32 `json:"intervalMinutes,omitempty"`
+
+	// RetentionDays for local backups. Maps to PAPERCLIP_DB_BACKUP_RETENTION_DAYS.
+	// +optional
+	RetentionDays int32 `json:"retentionDays,omitempty"`
 }
 
 // BackupS3Spec configures S3 backup destination.

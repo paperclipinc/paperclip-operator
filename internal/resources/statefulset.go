@@ -315,6 +315,9 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 	// Secrets provider (e.g. AWS Secrets Manager)
 	vars = append(vars, buildSecretsProviderEnvVars(instance)...)
 
+	// App-native database backups
+	vars = append(vars, buildAppNativeBackupEnvVars(instance)...)
+
 	// Auth: email delivery and OAuth providers
 	vars = append(vars, buildAuthEmailAndOAuthEnvVars(instance)...)
 
@@ -549,6 +552,27 @@ func buildSecretsProviderEnvVars(instance *paperclipv1alpha1.Instance) []corev1.
 			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_SECRETS_AWS_DELETE_RECOVERY_DAYS", Value: fmt.Sprintf("%d", *aws.DeleteRecoveryDays)})
 		}
 	}
+	return vars
+}
+
+// buildAppNativeBackupEnvVars emits Paperclip's built-in DB backup env vars,
+// keeping the backup directory on the persistent data volume.
+func buildAppNativeBackupEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
+	if instance.Spec.Backup == nil || instance.Spec.Backup.AppNative == nil {
+		return nil
+	}
+	an := instance.Spec.Backup.AppNative
+	var vars []corev1.EnvVar
+	if an.Enabled != nil {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_DB_BACKUP_ENABLED", Value: fmt.Sprintf("%t", *an.Enabled)})
+	}
+	if an.IntervalMinutes > 0 {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES", Value: fmt.Sprintf("%d", an.IntervalMinutes)})
+	}
+	if an.RetentionDays > 0 {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_DB_BACKUP_RETENTION_DAYS", Value: fmt.Sprintf("%d", an.RetentionDays)})
+	}
+	vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_DB_BACKUP_DIR", Value: DataMountPath + "/backups"})
 	return vars
 }
 

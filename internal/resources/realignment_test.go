@@ -182,3 +182,35 @@ func TestBuildStatefulSet_E2BOmittedByDefault(t *testing.T) {
 		t.Error("E2B_API_KEY must be omitted when spec.adapters.e2b is unset")
 	}
 }
+
+// --- Task 7: app-native DB backup ---
+
+func TestBuildStatefulSet_AppNativeBackupEnv(t *testing.T) {
+	inst := newTestInstance("p")
+	inst.Spec.Backup = &paperclipv1alpha1.BackupSpec{
+		AppNative: &paperclipv1alpha1.AppNativeBackupSpec{
+			Enabled:         Ptr(true),
+			IntervalMinutes: 120,
+			RetentionDays:   14,
+		},
+	}
+	env := containerEnv(inst)
+	wantEnvValue(t, env, "PAPERCLIP_DB_BACKUP_ENABLED", "true")
+	wantEnvValue(t, env, "PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES", "120")
+	wantEnvValue(t, env, "PAPERCLIP_DB_BACKUP_RETENTION_DAYS", "14")
+	wantEnvValue(t, env, "PAPERCLIP_DB_BACKUP_DIR", DataMountPath+"/backups")
+}
+
+func TestBuildStatefulSet_AppNativeBackupDisabled(t *testing.T) {
+	inst := newTestInstance("p")
+	inst.Spec.Backup = &paperclipv1alpha1.BackupSpec{
+		AppNative: &paperclipv1alpha1.AppNativeBackupSpec{Enabled: Ptr(false)},
+	}
+	wantEnvValue(t, containerEnv(inst), "PAPERCLIP_DB_BACKUP_ENABLED", "false")
+}
+
+func TestBuildStatefulSet_NoAppNativeBackupByDefault(t *testing.T) {
+	if hasEnvName(containerEnv(newTestInstance("p")), "PAPERCLIP_DB_BACKUP_ENABLED") {
+		t.Error("PAPERCLIP_DB_BACKUP_* must be omitted when spec.backup.appNative is unset")
+	}
+}
