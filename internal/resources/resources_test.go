@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -161,8 +162,9 @@ func TestBuildStatefulSetEnvVars(t *testing.T) {
 	if envMap["PAPERCLIP_PUBLIC_URL"] != "https://paperclip.example.com" {
 		t.Error("expected PAPERCLIP_PUBLIC_URL=https://paperclip.example.com")
 	}
-	if envMap["PAPERCLIP_ALLOWED_HOSTNAMES"] != "paperclip.example.com" {
-		t.Error("expected PAPERCLIP_ALLOWED_HOSTNAMES=paperclip.example.com")
+	// Always includes in-cluster Service DNS plus the user-specified hostname.
+	if !strings.Contains(envMap["PAPERCLIP_ALLOWED_HOSTNAMES"], "paperclip.example.com") {
+		t.Errorf("expected PAPERCLIP_ALLOWED_HOSTNAMES to include paperclip.example.com, got %q", envMap["PAPERCLIP_ALLOWED_HOSTNAMES"])
 	}
 }
 

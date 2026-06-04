@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -94,6 +95,90 @@ func TestBuildStatefulSet_BindEnv(t *testing.T) {
 	wantEnvValue(t, env, "PAPERCLIP_BIND_HOST", "0.0.0.0")
 	if hasEnvName(env, "HOST") {
 		t.Error("legacy HOST env should no longer be set")
+	}
+}
+
+// --- allowed hostnames always include in-cluster Service DNS ---
+// In authenticated mode the app rejects auth requests from hostnames not in its
+// allowlist. The operator's own bootstrap Job calls the Service DNS, so those
+// names must always be allowed or admin bootstrap fails with HTTP 403.
+
+func TestBuildStatefulSet_AllowedHostnamesIncludesServiceDNS(t *testing.T) {
+	inst := newTestInstance("p") // namespace test-ns
+	inst.Spec.Deployment.AllowedHostnames = []string{"paperclip.example.com"}
+	v, ok := envValue(containerEnv(inst), "PAPERCLIP_ALLOWED_HOSTNAMES")
+	if !ok {
+		t.Fatal("expected PAPERCLIP_ALLOWED_HOSTNAMES to always be set")
+	}
+	for _, want := range []string{
+		"p.test-ns.svc.cluster.local", "p.test-ns", "p", "localhost", "paperclip.example.com",
+	} {
+		if !strings.Contains(","+v+",", ","+want+",") {
+			t.Errorf("allowed hostnames %q missing %q", v, want)
+		}
+	}
+}
+
+func TestBuildStatefulSet_AllowedHostnamesSetWithoutUserValues(t *testing.T) {
+	v, ok := envValue(containerEnv(newTestInstance("p")), "PAPERCLIP_ALLOWED_HOSTNAMES")
+	if !ok || !strings.Contains(v, "p.test-ns.svc.cluster.local") {
+		t.Errorf("expected Service DNS in allowed hostnames even without user values, got %q", v)
+	}
+}
+
+// --- main container bypasses the image gosu entrypoint ---
+// The app image ENTRYPOINT (docker-entrypoint.sh) gosu-drops from root to "node",
+// which fails under runAsNonRoot/drop-ALL ("failed switching to node: operation
+// not permitted"). The operator must override Command to exec node directly.
+
+func TestBuildStatefulSet_MainContainerBypassesImageEntrypoint(t *testing.T) {
+	c := BuildStatefulSet(newTestInstance("p"), nil).Spec.Template.Spec.Containers[0]
+	if len(c.Command) == 0 {
+		t.Fatal("main container must override Command to bypass the image gosu entrypoint")
+	}
+	if c.Command[0] != "/bin/sh" {
+		t.Errorf("expected /bin/sh command wrapper, got %v", c.Command)
+	}
+	joined := strings.Join(c.Args, " ")
+	if !strings.Contains(joined, "exec ") || !strings.Contains(joined, "server/dist/index.js") {
+		t.Errorf("expected args to exec the node entrypoint, got %q", joined)
+	}
+}
+
+func TestBuildStatefulSet_MultiReplicaKeepsHeartbeatGating(t *testing.T) {
+	inst := newTestInstance("p")
+	inst.Spec.Availability.Replicas = Ptr(int32(3))
+	inst.Spec.Heartbeat.Enabled = true
+	c := BuildStatefulSet(inst, nil).Spec.Template.Spec.Containers[0]
+	joined := strings.Join(c.Args, " ")
+	if !strings.Contains(joined, "HEARTBEAT_SCHEDULER_ENABLED") {
+		t.Errorf("multi-replica should keep pod-0 heartbeat gating, got %q", joined)
+	}
+}
+
+// --- OTEL instrumentation gating ---
+// The operator injects NODE_OPTIONS=--import ./server/dist/instrumentation.js for
+// OTEL. That file only exists in the app image when instrumentation is built in,
+// and forcing it unconditionally crashes the app (ERR_MODULE_NOT_FOUND) on images
+// that do not ship it. Gate the whole OTEL block on observability.metrics.enabled.
+
+func TestBuildStatefulSet_NoOTELByDefault(t *testing.T) {
+	env := containerEnv(newTestInstance("p")) // metrics disabled by default
+	for _, name := range []string{"NODE_OPTIONS", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_SERVICE_NAME"} {
+		if hasEnvName(env, name) {
+			t.Errorf("%s must not be injected when observability.metrics is disabled", name)
+		}
+	}
+}
+
+func TestBuildStatefulSet_OTELWhenMetricsEnabled(t *testing.T) {
+	inst := newTestInstance("p")
+	inst.Spec.Observability.Metrics.Enabled = true
+	env := containerEnv(inst)
+	wantEnvValue(t, env, "NODE_OPTIONS", "--import ./server/dist/instrumentation.js")
+	wantEnvValue(t, env, "OTEL_SERVICE_NAME", "p")
+	if !hasEnvName(env, "OTEL_EXPORTER_OTLP_ENDPOINT") {
+		t.Error("expected OTEL_EXPORTER_OTLP_ENDPOINT when metrics enabled")
 	}
 }
 

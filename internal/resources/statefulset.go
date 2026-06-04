@@ -3,6 +3,7 @@ package resources
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -178,14 +179,19 @@ func buildMainContainer(instance *paperclipv1alpha1.Instance) corev1.Container {
 		container.SecurityContext.ReadOnlyRootFilesystem = Ptr(false) // Paperclip needs writable filesystem for node_modules, etc.
 	}
 
-	// Multi-replica heartbeat gating: only pod-0 runs the scheduler.
-	// Uses a shell wrapper that checks the StatefulSet ordinal in $HOSTNAME.
+	// Always override the image ENTRYPOINT (docker-entrypoint.sh) and exec the
+	// server directly. The image entrypoint gosu-drops from root to "node", which
+	// fails under our runAsNonRoot / runAsUser:1000 / drop-ALL securityContext
+	// ("failed switching to node: operation not permitted"). We already run as the
+	// node uid, so there is nothing to drop to.
+	container.Command = []string{"/bin/sh", "-c"}
+	script := "exec " + DefaultPaperclipEntrypoint
+	// Multi-replica heartbeat gating: only pod-0 runs the scheduler. Uses a shell
+	// wrapper that checks the StatefulSet ordinal in $HOSTNAME.
 	if instance.Spec.Heartbeat.Enabled && EffectiveReplicas(instance) > 1 {
-		container.Command = []string{"/bin/sh", "-c"}
-		container.Args = []string{
-			`case "$HOSTNAME" in *-0) export HEARTBEAT_SCHEDULER_ENABLED=true ;; *) export HEARTBEAT_SCHEDULER_ENABLED=false ;; esac; exec ` + DefaultPaperclipEntrypoint,
-		}
+		script = `case "$HOSTNAME" in *-0) export HEARTBEAT_SCHEDULER_ENABLED=true ;; *) export HEARTBEAT_SCHEDULER_ENABLED=false ;; esac; ` + script
 	}
+	container.Args = []string{script}
 
 	// Probes
 	container.LivenessProbe = buildLivenessProbe(instance, port)
@@ -207,34 +213,36 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		{Name: "PAPERCLIP_DEPLOYMENT_EXPOSURE", Value: instance.Spec.Deployment.Exposure},
 	}
 
-	// OpenTelemetry - load instrumentation before the app so OTEL can
-	// hook into HTTP/Express/pg modules at require time.
-	vars = append(vars,
-		corev1.EnvVar{Name: "NODE_OPTIONS", Value: "--import ./server/dist/instrumentation.js"},
-		corev1.EnvVar{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: "http://otel-collector.observability.svc.cluster.local:4317"},
-		corev1.EnvVar{Name: "OTEL_SERVICE_NAME", Value: instance.Name},
-		corev1.EnvVar{
-			Name:  "OTEL_RESOURCE_ATTRIBUTES",
-			Value: fmt.Sprintf("k8s.namespace.name=%s,k8s.statefulset.name=%s", instance.Namespace, StatefulSetName(instance)),
-		},
-	)
+	// OpenTelemetry - load instrumentation before the app so OTEL can hook into
+	// HTTP/Express/pg modules at require time. Only inject this when observability
+	// is enabled: the --import preload references ./server/dist/instrumentation.js,
+	// which is only present in app images built with instrumentation; forcing it
+	// unconditionally crashes the app (ERR_MODULE_NOT_FOUND) on images without it.
+	if instance.Spec.Observability.Metrics.Enabled {
+		vars = append(vars,
+			corev1.EnvVar{Name: "NODE_OPTIONS", Value: "--import ./server/dist/instrumentation.js"},
+			corev1.EnvVar{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: "http://otel-collector.observability.svc.cluster.local:4317"},
+			corev1.EnvVar{Name: "OTEL_SERVICE_NAME", Value: instance.Name},
+			corev1.EnvVar{
+				Name:  "OTEL_RESOURCE_ATTRIBUTES",
+				Value: fmt.Sprintf("k8s.namespace.name=%s,k8s.statefulset.name=%s", instance.Namespace, StatefulSetName(instance)),
+			},
+		)
+	}
 
 	// Public URL
 	if instance.Spec.Deployment.PublicURL != "" {
 		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_PUBLIC_URL", Value: instance.Spec.Deployment.PublicURL})
 	}
 
-	// Allowed hostnames
-	if len(instance.Spec.Deployment.AllowedHostnames) > 0 {
-		hostnamesStr := ""
-		for i, h := range instance.Spec.Deployment.AllowedHostnames {
-			if i > 0 {
-				hostnamesStr += ","
-			}
-			hostnamesStr += h
-		}
-		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_ALLOWED_HOSTNAMES", Value: hostnamesStr})
-	}
+	// Allowed hostnames: always include the in-cluster Service DNS names (plus
+	// loopback) so the operator's own bootstrap Job and other in-cluster clients
+	// pass the app's authenticated-mode hostname allowlist. User-specified
+	// hostnames (e.g. the public ingress host) are appended.
+	vars = append(vars, corev1.EnvVar{
+		Name:  "PAPERCLIP_ALLOWED_HOSTNAMES",
+		Value: strings.Join(allowedHostnames(instance), ","),
+	})
 
 	// Database URL
 	switch instance.Spec.Database.Mode {
@@ -520,6 +528,34 @@ func buildAuthEmailAndOAuthEnvVars(instance *paperclipv1alpha1.Instance) []corev
 	}
 
 	return vars
+}
+
+// allowedHostnames returns the hostname allowlist for PAPERCLIP_ALLOWED_HOSTNAMES:
+// always the in-cluster Service DNS names plus loopback, then any user-specified
+// hostnames, deduplicated and order-preserving.
+func allowedHostnames(instance *paperclipv1alpha1.Instance) []string {
+	svc := ServiceName(instance)
+	ns := instance.Namespace
+	hosts := []string{
+		"localhost",
+		"127.0.0.1",
+		svc,
+		svc + "." + ns,
+		svc + "." + ns + ".svc",
+		svc + "." + ns + ".svc.cluster.local",
+	}
+	hosts = append(hosts, instance.Spec.Deployment.AllowedHostnames...)
+
+	seen := make(map[string]bool, len(hosts))
+	out := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		if h == "" || seen[h] {
+			continue
+		}
+		seen[h] = true
+		out = append(out, h)
+	}
+	return out
 }
 
 // buildSecretsProviderEnvVars emits the env vars selecting an external secrets
