@@ -102,6 +102,10 @@ jobs:
           # PR waits for a human maintainer review (typically ~hours to a day).
           # Idempotent: if the file already exists upstream with the same content,
           # git will see no diff.
+          # Seed ci.yaml only when the catalog has none. Overwriting it every
+          # release is a privileged change that withholds authorized-changes and
+          # blocks auto-merge.
+          if [ ! -f operators/paperclip-operator/ci.yaml ]; then
           cat > operators/paperclip-operator/ci.yaml <<'CI_YAML'
           ---
           # Authorized reviewers for paperclip-operator PRs.
@@ -111,6 +115,7 @@ jobs:
           reviewers:
             - stubbi
           CI_YAML
+          fi
 
           git add "operators/paperclip-operator/${VERSION}" operators/paperclip-operator/ci.yaml
           git commit -s -m "operator paperclip-operator (${VERSION})"
