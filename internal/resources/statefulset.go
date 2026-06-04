@@ -199,7 +199,8 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 	port := servicePort(instance)
 	vars := []corev1.EnvVar{
 		{Name: "PORT", Value: fmt.Sprintf("%d", port)},
-		{Name: "HOST", Value: "0.0.0.0"},
+		{Name: "PAPERCLIP_BIND", Value: "custom"},
+		{Name: "PAPERCLIP_BIND_HOST", Value: "0.0.0.0"},
 		{Name: "PAPERCLIP_HOME", Value: DataMountPath},
 		{Name: "SERVE_UI", Value: "true"},
 		{Name: "PAPERCLIP_DEPLOYMENT_MODE", Value: instance.Spec.Deployment.Mode},

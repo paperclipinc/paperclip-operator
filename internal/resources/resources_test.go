@@ -146,8 +146,11 @@ func TestBuildStatefulSetEnvVars(t *testing.T) {
 		}
 	}
 
-	if envMap["HOST"] != "0.0.0.0" {
-		t.Error("expected HOST=0.0.0.0")
+	if envMap["PAPERCLIP_BIND"] != "custom" {
+		t.Error("expected PAPERCLIP_BIND=custom")
+	}
+	if envMap["PAPERCLIP_BIND_HOST"] != "0.0.0.0" {
+		t.Error("expected PAPERCLIP_BIND_HOST=0.0.0.0")
 	}
 	if envMap["SERVE_UI"] != "true" {
 		t.Error("expected SERVE_UI=true")

@@ -85,3 +85,14 @@ func TestBuildStatefulSet_DisableSignUpOmittedByDefault(t *testing.T) {
 		t.Error("PAPERCLIP_AUTH_DISABLE_SIGN_UP must be omitted when DisableSignUp is false")
 	}
 }
+
+// --- Task 2: bind modernization ---
+
+func TestBuildStatefulSet_BindEnv(t *testing.T) {
+	env := containerEnv(newTestInstance("p"))
+	wantEnvValue(t, env, "PAPERCLIP_BIND", "custom")
+	wantEnvValue(t, env, "PAPERCLIP_BIND_HOST", "0.0.0.0")
+	if hasEnvName(env, "HOST") {
+		t.Error("legacy HOST env should no longer be set")
+	}
+}
