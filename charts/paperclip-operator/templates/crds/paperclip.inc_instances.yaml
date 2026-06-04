@@ -5852,6 +5852,46 @@ spec:
               secrets:
                 description: Secrets configures the Paperclip secrets management system.
                 properties:
+                  aws:
+                    description: |-
+                      AWS configures the AWS Secrets Manager provider. AWS credentials are sourced
+                      from the standard AWS SDK credential chain - use IRSA via
+                      spec.security.rbac.serviceAccountAnnotations rather than injecting keys.
+                    properties:
+                      deleteRecoveryDays:
+                        default: 30
+                        description: DeleteRecoveryDays is the AWS recovery window
+                          (in days) for deleted secrets.
+                        format: int32
+                        type: integer
+                      deploymentID:
+                        description: DeploymentID namespaces secrets for this deployment.
+                        type: string
+                      endpoint:
+                        description: Endpoint overrides the AWS Secrets Manager endpoint
+                          (for VPC endpoints or testing).
+                        type: string
+                      environment:
+                        description: Environment is an optional environment label
+                          applied to stored secrets.
+                        type: string
+                      kmsKeyID:
+                        description: KMSKeyID is the KMS key (id or ARN) used to encrypt
+                          secrets.
+                        type: string
+                      prefix:
+                        default: paperclip
+                        description: Prefix is the secret name prefix.
+                        type: string
+                      region:
+                        description: Region is the AWS region of the secrets and KMS
+                          key.
+                        type: string
+                    required:
+                    - deploymentID
+                    - kmsKeyID
+                    - region
+                    type: object
                   masterKeySecretRef:
                     description: MasterKeySecretRef references a Secret containing
                       the master encryption key.
@@ -5877,11 +5917,24 @@ spec:
                     - key
                     type: object
                     x-kubernetes-map-type: atomic
+                  provider:
+                    default: local_encrypted
+                    description: |-
+                      Provider selects the secrets backend. "local_encrypted" (default) encrypts
+                      secrets with the master key; "aws_secrets_manager" stores them in AWS
+                      Secrets Manager. Maps to PAPERCLIP_SECRETS_PROVIDER.
+                    enum:
+                    - local_encrypted
+                    - aws_secrets_manager
+                    type: string
                   strictMode:
                     description: StrictMode requires all sensitive values to use encrypted
                       references.
                     type: boolean
                 type: object
+                x-kubernetes-validations:
+                - message: spec.secrets.aws is required when provider is aws_secrets_manager
+                  rule: self.provider != 'aws_secrets_manager' || has(self.aws)
               security:
                 description: Security configures pod and container security settings.
                 properties:

@@ -355,7 +355,22 @@ type OAuthProviderSpec struct {
 }
 
 // SecretsSpec configures Paperclip's built-in secrets management.
+// +kubebuilder:validation:XValidation:rule="self.provider != 'aws_secrets_manager' || has(self.aws)",message="spec.secrets.aws is required when provider is aws_secrets_manager"
 type SecretsSpec struct {
+	// Provider selects the secrets backend. "local_encrypted" (default) encrypts
+	// secrets with the master key; "aws_secrets_manager" stores them in AWS
+	// Secrets Manager. Maps to PAPERCLIP_SECRETS_PROVIDER.
+	// +kubebuilder:default="local_encrypted"
+	// +kubebuilder:validation:Enum=local_encrypted;aws_secrets_manager
+	// +optional
+	Provider string `json:"provider,omitempty"`
+
+	// AWS configures the AWS Secrets Manager provider. AWS credentials are sourced
+	// from the standard AWS SDK credential chain - use IRSA via
+	// spec.security.rbac.serviceAccountAnnotations rather than injecting keys.
+	// +optional
+	AWS *AWSSecretsManagerSpec `json:"aws,omitempty"`
+
 	// MasterKeySecretRef references a Secret containing the master encryption key.
 	// +optional
 	MasterKeySecretRef *corev1.SecretKeySelector `json:"masterKeySecretRef,omitempty"`
@@ -363,6 +378,36 @@ type SecretsSpec struct {
 	// StrictMode requires all sensitive values to use encrypted references.
 	// +optional
 	StrictMode bool `json:"strictMode,omitempty"`
+}
+
+// AWSSecretsManagerSpec configures the AWS Secrets Manager secrets provider.
+type AWSSecretsManagerSpec struct {
+	// Region is the AWS region of the secrets and KMS key.
+	Region string `json:"region"`
+
+	// KMSKeyID is the KMS key (id or ARN) used to encrypt secrets.
+	KMSKeyID string `json:"kmsKeyID"`
+
+	// DeploymentID namespaces secrets for this deployment.
+	DeploymentID string `json:"deploymentID"`
+
+	// Prefix is the secret name prefix.
+	// +kubebuilder:default="paperclip"
+	// +optional
+	Prefix string `json:"prefix,omitempty"`
+
+	// Environment is an optional environment label applied to stored secrets.
+	// +optional
+	Environment string `json:"environment,omitempty"`
+
+	// Endpoint overrides the AWS Secrets Manager endpoint (for VPC endpoints or testing).
+	// +optional
+	Endpoint string `json:"endpoint,omitempty"`
+
+	// DeleteRecoveryDays is the AWS recovery window (in days) for deleted secrets.
+	// +kubebuilder:default=30
+	// +optional
+	DeleteRecoveryDays *int32 `json:"deleteRecoveryDays,omitempty"`
 }
 
 // StorageSpec configures persistent storage.

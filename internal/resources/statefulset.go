@@ -312,6 +312,9 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_SECRETS_STRICT_MODE", Value: "true"})
 	}
 
+	// Secrets provider (e.g. AWS Secrets Manager)
+	vars = append(vars, buildSecretsProviderEnvVars(instance)...)
+
 	// Auth: email delivery and OAuth providers
 	vars = append(vars, buildAuthEmailAndOAuthEnvVars(instance)...)
 
@@ -507,6 +510,38 @@ func buildAuthEmailAndOAuthEnvVars(instance *paperclipv1alpha1.Instance) []corev
 	return vars
 }
 
+// buildSecretsProviderEnvVars emits the env vars selecting an external secrets
+// provider. AWS credentials are intentionally not injected - the app uses the
+// AWS SDK credential chain (IRSA via serviceAccountAnnotations).
+func buildSecretsProviderEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
+	provider := instance.Spec.Secrets.Provider
+	if provider == "" || provider == "local_encrypted" {
+		return nil
+	}
+
+	vars := []corev1.EnvVar{{Name: "PAPERCLIP_SECRETS_PROVIDER", Value: provider}}
+	if provider == "aws_secrets_manager" && instance.Spec.Secrets.AWS != nil {
+		aws := instance.Spec.Secrets.AWS
+		vars = append(vars,
+			corev1.EnvVar{Name: "PAPERCLIP_SECRETS_AWS_REGION", Value: aws.Region},
+			corev1.EnvVar{Name: "PAPERCLIP_SECRETS_AWS_KMS_KEY_ID", Value: aws.KMSKeyID},
+			corev1.EnvVar{Name: "PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID", Value: aws.DeploymentID},
+		)
+		if aws.Prefix != "" {
+			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_SECRETS_AWS_PREFIX", Value: aws.Prefix})
+		}
+		if aws.Environment != "" {
+			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_SECRETS_AWS_ENVIRONMENT", Value: aws.Environment})
+		}
+		if aws.Endpoint != "" {
+			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_SECRETS_AWS_ENDPOINT", Value: aws.Endpoint})
+		}
+		if aws.DeleteRecoveryDays != nil {
+			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_SECRETS_AWS_DELETE_RECOVERY_DAYS", Value: fmt.Sprintf("%d", *aws.DeleteRecoveryDays)})
+		}
+	}
+	return vars
+}
 
 func buildCloudSandboxEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 	cs := instance.Spec.Adapters.CloudSandbox

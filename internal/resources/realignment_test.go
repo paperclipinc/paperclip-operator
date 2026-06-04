@@ -123,3 +123,36 @@ func TestBuildStatefulSet_NoManagedInferenceEnv(t *testing.T) {
 		}
 	}
 }
+
+// --- Task 5: AWS Secrets Manager vault ---
+
+func TestBuildStatefulSet_AWSSecretsVaultEnv(t *testing.T) {
+	inst := newTestInstance("p")
+	inst.Spec.Secrets.Provider = "aws_secrets_manager"
+	inst.Spec.Secrets.AWS = &paperclipv1alpha1.AWSSecretsManagerSpec{
+		Region:       "eu-central-1",
+		KMSKeyID:     "arn:aws:kms:eu-central-1:123:key/abc",
+		DeploymentID: "prod-1",
+		Prefix:       "paperclip",
+		Environment:  "production",
+		Endpoint:     "https://secretsmanager.eu-central-1.amazonaws.com",
+	}
+	env := containerEnv(inst)
+	wantEnvValue(t, env, "PAPERCLIP_SECRETS_PROVIDER", "aws_secrets_manager")
+	wantEnvValue(t, env, "PAPERCLIP_SECRETS_AWS_REGION", "eu-central-1")
+	wantEnvValue(t, env, "PAPERCLIP_SECRETS_AWS_KMS_KEY_ID", "arn:aws:kms:eu-central-1:123:key/abc")
+	wantEnvValue(t, env, "PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID", "prod-1")
+	wantEnvValue(t, env, "PAPERCLIP_SECRETS_AWS_PREFIX", "paperclip")
+	wantEnvValue(t, env, "PAPERCLIP_SECRETS_AWS_ENVIRONMENT", "production")
+	wantEnvValue(t, env, "PAPERCLIP_SECRETS_AWS_ENDPOINT", "https://secretsmanager.eu-central-1.amazonaws.com")
+}
+
+func TestBuildStatefulSet_LocalEncryptedDefaultNoAWSEnv(t *testing.T) {
+	env := containerEnv(newTestInstance("p")) // provider unset -> local_encrypted
+	if hasEnvName(env, "PAPERCLIP_SECRETS_PROVIDER") {
+		t.Error("PAPERCLIP_SECRETS_PROVIDER must be omitted for the default local provider")
+	}
+	if hasEnvName(env, "PAPERCLIP_SECRETS_AWS_REGION") {
+		t.Error("AWS env must not appear for the default local provider")
+	}
+}
