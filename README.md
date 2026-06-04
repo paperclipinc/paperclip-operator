@@ -711,7 +711,7 @@ spec:
 ```yaml
 spec:
   image:
-    repository: ghcr.io/paperclipinc/paperclip   # default
+    repository: ghcr.io/paperclipai/paperclip   # default
     tag: latest                                   # default
     digest: sha256:abc123...                      # optional, overrides tag
     pullPolicy: IfNotPresent                      # "Always", "Never", or "IfNotPresent"

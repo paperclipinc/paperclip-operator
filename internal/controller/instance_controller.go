@@ -1375,7 +1375,7 @@ func (r *InstanceReconciler) reconcileAutoUpdate(ctx context.Context, instance *
 
 	repo := instance.Spec.Image.Repository
 	if repo == "" {
-		repo = "ghcr.io/paperclipinc/paperclip"
+		repo = "ghcr.io/paperclipai/paperclip"
 	}
 	tag := instance.Spec.Image.Tag
 	if tag == "" {

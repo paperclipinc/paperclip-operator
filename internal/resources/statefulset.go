@@ -860,7 +860,7 @@ func shareProcessNamespace(instance *paperclipv1alpha1.Instance) *bool {
 func containerImage(instance *paperclipv1alpha1.Instance) string {
 	repo := instance.Spec.Image.Repository
 	if repo == "" {
-		repo = "ghcr.io/paperclipinc/paperclip"
+		repo = "ghcr.io/paperclipai/paperclip"
 	}
 
 	if instance.Spec.Image.Digest != "" {

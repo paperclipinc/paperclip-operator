@@ -19,7 +19,7 @@ func newBenchInstance() *paperclipv1alpha1.Instance {
 		},
 		Spec: paperclipv1alpha1.InstanceSpec{
 			Image: paperclipv1alpha1.ImageSpec{
-				Repository: "ghcr.io/paperclipinc/paperclip",
+				Repository: "ghcr.io/paperclipai/paperclip",
 				Tag:        "v1.0.0",
 			},
 			Database: paperclipv1alpha1.DatabaseSpec{Mode: "managed"},
@@ -36,7 +36,7 @@ func newFullBenchInstance() *paperclipv1alpha1.Instance {
 		},
 		Spec: paperclipv1alpha1.InstanceSpec{
 			Image: paperclipv1alpha1.ImageSpec{
-				Repository: "ghcr.io/paperclipinc/paperclip",
+				Repository: "ghcr.io/paperclipai/paperclip",
 				Tag:        "v1.0.0",
 			},
 			Deployment: paperclipv1alpha1.DeploymentSpec{

@@ -378,7 +378,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `repository` _string_ | Repository is the container image repository. | ghcr.io/paperclipinc/paperclip | Optional: \{\} <br /> |
+| `repository` _string_ | Repository is the container image repository. | ghcr.io/paperclipai/paperclip | Optional: \{\} <br /> |
 | `tag` _string_ | Tag is the container image tag. Either tag or digest must be set; there is<br />no default, because pinning to a mutable tag like :latest can silently pull<br />a broken upstream build. |  | Optional: \{\} <br /> |
 | `digest` _string_ | Digest overrides the tag with an image digest (e.g. sha256:abc...). |  | Optional: \{\} <br /> |
 | `pullPolicy` _[PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#pullpolicy-v1-core)_ | PullPolicy specifies the image pull policy. | IfNotPresent | Enum: [Always Never IfNotPresent] <br />Optional: \{\} <br /> |

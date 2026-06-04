@@ -18,7 +18,7 @@ func newTestInstance(name string) *paperclipv1alpha1.Instance {
 		},
 		Spec: paperclipv1alpha1.InstanceSpec{
 			Image: paperclipv1alpha1.ImageSpec{
-				Repository: "ghcr.io/paperclipinc/paperclip",
+				Repository: "ghcr.io/paperclipai/paperclip",
 				Tag:        "v1.0.0",
 			},
 			Deployment: paperclipv1alpha1.DeploymentSpec{
@@ -71,8 +71,8 @@ func TestBuildStatefulSet(t *testing.T) {
 	if container.Name != ContainerName {
 		t.Errorf("expected container name %q, got %q", ContainerName, container.Name)
 	}
-	if container.Image != "ghcr.io/paperclipinc/paperclip:v1.0.0" {
-		t.Errorf("expected image 'ghcr.io/paperclipinc/paperclip:v1.0.0', got %q", container.Image)
+	if container.Image != "ghcr.io/paperclipai/paperclip:v1.0.0" {
+		t.Errorf("expected image 'ghcr.io/paperclipai/paperclip:v1.0.0', got %q", container.Image)
 	}
 
 	// Verify port
@@ -125,7 +125,7 @@ func TestBuildStatefulSetWithDigest(t *testing.T) {
 	sts := BuildStatefulSet(instance, nil)
 
 	container := sts.Spec.Template.Spec.Containers[0]
-	expected := "ghcr.io/paperclipinc/paperclip@sha256:abc123"
+	expected := "ghcr.io/paperclipai/paperclip@sha256:abc123"
 	if container.Image != expected {
 		t.Errorf("expected image %q, got %q", expected, container.Image)
 	}

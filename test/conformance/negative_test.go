@@ -42,7 +42,7 @@ metadata:
   name: neg-no-tag-digest
 spec:
   image:
-    repository: ghcr.io/paperclipinc/paperclip
+    repository: ghcr.io/paperclipai/paperclip
 `,
 		wantErrSubstring: "one of tag or digest must be set",
 	},

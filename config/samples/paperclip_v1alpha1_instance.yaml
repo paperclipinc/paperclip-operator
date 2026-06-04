@@ -5,10 +5,10 @@ metadata:
   namespace: default
 spec:
   image:
-    repository: ghcr.io/paperclipinc/paperclip
+    repository: ghcr.io/paperclipai/paperclip
     # Pick a specific upstream release tag. The operator rejects Instances
     # without a tag (or digest), since :latest can silently pull a broken build.
-    # See the tags list at https://github.com/paperclipinc/paperclip/pkgs/container/paperclip
+    # See the tags list at https://github.com/paperclipai/paperclip/pkgs/container/paperclip
     tag: "2026.0403"
 
   deployment:
