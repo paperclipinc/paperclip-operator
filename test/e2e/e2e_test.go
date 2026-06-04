@@ -430,14 +430,14 @@ func stsReady(ns, name string) func(Gomega) {
 	}
 }
 
-// stsEnvNames returns the space-separated env var names of the primary container.
+// stsEnvNames returns the space-separated env var names of the primary container,
+// or "" if the StatefulSet does not exist yet. It does not assert, so it is safe
+// to call inside an Eventually (the caller asserts on the returned value).
 func stsEnvNames(ns, name string) string {
-	out, err := utils.Run(exec.Command("kubectl", "get", "statefulset", name, "-n", ns,
+	out, _ := utils.Run(exec.Command("kubectl", "get", "statefulset", name, "-n", ns,
 		"-o", "jsonpath={.spec.template.spec.containers[0].env[*].name}"))
-	Expect(err).NotTo(HaveOccurred())
 	return out
 }
-
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
 // It uses the Kubernetes TokenRequest API to generate a token by directly sending a request
