@@ -304,6 +304,12 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		AfterAll(func() {
+			// Delete Instances and wait for their finalizers to clear while the
+			// operator is still running. The outer Manager AfterAll undeploys the
+			// operator; if Instances still had finalizers then, nothing would clear
+			// them and the namespace + CRD deletion would wedge until timeout.
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "instance", "--all",
+				"-n", instNS, "--ignore-not-found", "--timeout=180s"))
 			_, _ = utils.Run(exec.Command("kubectl", "delete", "ns", instNS, "--wait=false"))
 		})
 
