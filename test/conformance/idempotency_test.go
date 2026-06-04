@@ -32,8 +32,8 @@ import (
 // unchanged. A reconciler that rewrites owned objects on every pass (a bare
 // r.Update instead of CreateOrUpdate) fails here.
 //
-// The fixtures use the embedded (PGlite) database and external/no Redis so the
-// operator never has to provision a managed PostgreSQL or Redis StatefulSet.
+// The fixtures use the embedded (PGlite) database so the operator never has to
+// provision a managed PostgreSQL StatefulSet.
 // That keeps each instance single-pod and lets the operator settle its owned
 // resources quickly on a tiny kind cluster. The fingerprint-stability check
 // deliberately does NOT wait for the application Pod to become Ready: that

@@ -96,3 +96,11 @@ func TestBuildStatefulSet_BindEnv(t *testing.T) {
 		t.Error("legacy HOST env should no longer be set")
 	}
 }
+
+// --- Task 3: Redis removed ---
+
+func TestBuildStatefulSet_NoRedisEnv(t *testing.T) {
+	if hasEnvName(containerEnv(newTestInstance("p")), "PAPERCLIP_RATE_LIMIT_REDIS_URL") {
+		t.Error("Redis env must not be emitted; the app has no Redis rate limiter")
+	}
+}

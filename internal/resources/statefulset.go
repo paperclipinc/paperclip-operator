@@ -364,29 +364,6 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		}
 	}
 
-	// Redis
-	if instance.Spec.Redis != nil {
-		redis := instance.Spec.Redis
-		switch redis.Mode {
-		case ModeExternal:
-			if redis.ExternalURLSecretRef != nil {
-				vars = append(vars, corev1.EnvVar{
-					Name: "PAPERCLIP_RATE_LIMIT_REDIS_URL",
-					ValueFrom: &corev1.EnvVarSource{
-						SecretKeyRef: redis.ExternalURLSecretRef,
-					},
-				})
-			} else if redis.ExternalURL != "" {
-				vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_RATE_LIMIT_REDIS_URL", Value: redis.ExternalURL})
-			}
-		default: // "managed" or empty
-			vars = append(vars, corev1.EnvVar{
-				Name:  "PAPERCLIP_RATE_LIMIT_REDIS_URL",
-				Value: RedisURL(instance),
-			})
-		}
-	}
-
 	// LLM API keys
 	if instance.Spec.Adapters.APIKeysSecretRef != nil {
 		vars = append(vars, corev1.EnvVar{

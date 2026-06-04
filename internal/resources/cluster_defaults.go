@@ -50,16 +50,13 @@ func ApplyClusterDefaults(instance *paperclipv1alpha1.Instance, defaults *paperc
 	}
 
 	// Storage class: applied to the Paperclip data PVC and the managed
-	// PostgreSQL / Redis PVCs whenever the instance leaves the field unset.
+	// PostgreSQL PVC whenever the instance leaves the field unset.
 	if d.StorageClass != "" {
 		if out.Spec.Storage.Persistence.StorageClass == nil {
 			out.Spec.Storage.Persistence.StorageClass = ptrTo(d.StorageClass)
 		}
 		if out.Spec.Database.Managed.StorageClass == nil {
 			out.Spec.Database.Managed.StorageClass = ptrTo(d.StorageClass)
-		}
-		if out.Spec.Redis != nil && out.Spec.Redis.Managed.StorageClass == nil {
-			out.Spec.Redis.Managed.StorageClass = ptrTo(d.StorageClass)
 		}
 	}
 

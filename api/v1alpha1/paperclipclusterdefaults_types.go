@@ -38,7 +38,7 @@ type PaperclipClusterDefaultsSpec struct {
 	Image ImageSpec `json:"image,omitempty"`
 
 	// StorageClass is the default storage class applied to the Paperclip data
-	// PVC, the managed PostgreSQL PVC, and the managed Redis PVC when those
+	// PVC, the managed PostgreSQL PVC when those
 	// fields are unset on the instance.
 	// +optional
 	StorageClass string `json:"storageClass,omitempty"`

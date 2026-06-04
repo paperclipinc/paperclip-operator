@@ -112,7 +112,7 @@ func waitForInstanceReady(ctx context.Context, c client.Client, ns, name string,
 // owned workload resources (the application StatefulSet and Service), or fails
 // after timeout. Unlike waitForInstanceReady it does NOT require the workload
 // Pod to pass its readiness probe: the app image may take minutes to pull and
-// boot on a tiny kind cluster, and the database/Redis may not be reachable at
+// boot on a tiny kind cluster, and the database may not be reachable at
 // all in a lightweight conformance fixture. Idempotency conformance only needs
 // the operator to have settled the desired child objects so their fingerprint
 // can be compared across reconciles; it does not need the app to serve traffic.

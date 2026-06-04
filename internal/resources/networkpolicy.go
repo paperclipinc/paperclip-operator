@@ -141,37 +141,6 @@ func BuildNetworkPolicy(instance *paperclipv1alpha1.Instance) *networkingv1.Netw
 		})
 	}
 
-	// Allow egress to Redis
-	if instance.Spec.Redis != nil {
-		switch instance.Spec.Redis.Mode {
-		case managedMode, "":
-			np.Spec.Egress = append(np.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
-				To: []networkingv1.NetworkPolicyPeer{
-					{
-						PodSelector: &metav1.LabelSelector{
-							MatchLabels: RedisSelectorLabels(instance),
-						},
-					},
-				},
-				Ports: []networkingv1.NetworkPolicyPort{
-					{
-						Port:     Ptr(intstr.FromInt32(RedisPort)),
-						Protocol: Ptr(corev1.ProtocolTCP),
-					},
-				},
-			})
-		case ModeExternal:
-			np.Spec.Egress = append(np.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
-				Ports: []networkingv1.NetworkPolicyPort{
-					{
-						Port:     Ptr(intstr.FromInt32(RedisPort)),
-						Protocol: Ptr(corev1.ProtocolTCP),
-					},
-				},
-			})
-		}
-	}
-
 	// Custom ingress CIDRs
 	for _, cidr := range instance.Spec.Security.NetworkPolicy.AllowIngressCIDRs {
 		np.Spec.Ingress = append(np.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
@@ -238,42 +207,6 @@ func BuildDatabaseNetworkPolicy(instance *paperclipv1alpha1.Instance) *networkin
 				},
 			},
 			// Deny all egress - database does not need outbound access
-			Egress: []networkingv1.NetworkPolicyEgressRule{},
-		},
-	}
-}
-
-// BuildRedisNetworkPolicy constructs a NetworkPolicy restricting ingress to the managed Redis.
-// Only allows traffic from Paperclip server pods on the Redis port.
-func BuildRedisNetworkPolicy(instance *paperclipv1alpha1.Instance) *networkingv1.NetworkPolicy {
-	return &networkingv1.NetworkPolicy{
-		ObjectMeta: ObjectMeta(instance, instance.Name+"-redis"),
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{
-				MatchLabels: RedisSelectorLabels(instance),
-			},
-			PolicyTypes: []networkingv1.PolicyType{
-				networkingv1.PolicyTypeIngress,
-				networkingv1.PolicyTypeEgress,
-			},
-			Ingress: []networkingv1.NetworkPolicyIngressRule{
-				{
-					From: []networkingv1.NetworkPolicyPeer{
-						{
-							PodSelector: &metav1.LabelSelector{
-								MatchLabels: SelectorLabels(instance),
-							},
-						},
-					},
-					Ports: []networkingv1.NetworkPolicyPort{
-						{
-							Port:     Ptr(intstr.FromInt32(RedisPort)),
-							Protocol: Ptr(corev1.ProtocolTCP),
-						},
-					},
-				},
-			},
-			// Deny all egress - Redis does not need outbound access
 			Egress: []networkingv1.NetworkPolicyEgressRule{},
 		},
 	}

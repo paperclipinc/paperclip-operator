@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
 )
@@ -158,17 +157,3 @@ func TestApplyClusterDefaults_MergeEnvByName(t *testing.T) {
 	}
 }
 
-func TestApplyClusterDefaults_RedisStorageClass(t *testing.T) {
-	inst := newTestInstance("pc")
-	inst.Spec.Redis = &paperclipv1alpha1.RedisSpec{Mode: "managed"}
-
-	defaults := &paperclipv1alpha1.PaperclipClusterDefaults{
-		ObjectMeta: metav1.ObjectMeta{Name: paperclipv1alpha1.ClusterDefaultsSingletonName},
-		Spec:       paperclipv1alpha1.PaperclipClusterDefaultsSpec{StorageClass: "fast-ssd"},
-	}
-
-	out := ApplyClusterDefaults(inst, defaults)
-	if out.Spec.Redis.Managed.StorageClass == nil || *out.Spec.Redis.Managed.StorageClass != "fast-ssd" {
-		t.Errorf("redis storage class = %v", out.Spec.Redis.Managed.StorageClass)
-	}
-}

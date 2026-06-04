@@ -15,7 +15,7 @@ spec:
   image:
     tag: "2026.0403"
 
-  # Default storage class for the data PVC and the managed Postgres/Redis PVCs.
+  # Default storage class for the data PVC and the managed Postgres PVC.
   storageClass: standard
 
   # Default database mode for instances that leave spec.database.mode unset.

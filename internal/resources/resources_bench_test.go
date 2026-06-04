@@ -45,7 +45,6 @@ func newFullBenchInstance() *paperclipv1alpha1.Instance {
 				PublicURL: "https://bench.example.com",
 			},
 			Database: paperclipv1alpha1.DatabaseSpec{Mode: "managed"},
-			Redis:    &paperclipv1alpha1.RedisSpec{Mode: "managed"},
 			Storage: paperclipv1alpha1.StorageSpec{
 				Persistence: paperclipv1alpha1.PersistenceSpec{
 					Enabled: true,
@@ -132,14 +131,6 @@ func BenchmarkBuildDatabaseStatefulSet(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		BuildDatabaseStatefulSet(instance)
-	}
-}
-
-func BenchmarkBuildRedisStatefulSet(b *testing.B) {
-	instance := newFullBenchInstance()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		BuildRedisStatefulSet(instance)
 	}
 }
 

@@ -43,7 +43,6 @@ var protectedConfigKeys = map[string]bool{
 // removed via self-config because they are operator-managed.
 var protectedEnvVars = map[string]bool{
 	"DATABASE_URL":         true,
-	"REDIS_URL":            true,
 	"BETTER_AUTH_SECRET":   true,
 	"PAPERCLIP_MASTER_KEY": true,
 	"NODE_ENV":             true,
