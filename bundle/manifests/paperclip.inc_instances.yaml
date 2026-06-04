@@ -70,10 +70,361 @@ spec:
                         type: string
                     type: object
                     x-kubernetes-map-type: atomic
+                  cloudSandbox:
+                    description: CloudSandbox configures cloud-based agent execution
+                      in isolated Kubernetes pods.
+                    properties:
+                      defaultImage:
+                        default: ghcr.io/paperclipinc/agent-multi:latest
+                        description: DefaultImage is the default agent runtime container
+                          image.
+                        type: string
+                      enabled:
+                        default: false
+                        description: Enabled controls whether cloud sandbox execution
+                          is available.
+                        type: boolean
+                      idleTimeoutMin:
+                        default: 30
+                        description: IdleTimeoutMin is how long (in minutes) a sandbox
+                          pod can be idle before being reaped.
+                        format: int32
+                        type: integer
+                      inferenceProxy:
+                        description: InferenceProxy configures the transparent inference
+                          metering proxy.
+                        properties:
+                          enabled:
+                            description: Enabled enables the inference proxy sidecar
+                              for metered API access.
+                            type: boolean
+                          image:
+                            description: Image is the inference proxy container image.
+                            type: string
+                          port:
+                            default: 8090
+                            description: Port is the port the proxy listens on.
+                            format: int32
+                            type: integer
+                        type: object
+                      multiNamespace:
+                        description: |-
+                          MultiNamespace enables per-company namespace isolation for sandbox pods.
+                          When enabled, each company's sandbox pods run in a dedicated namespace.
+                        type: boolean
+                      namespace:
+                        description: Namespace is the namespace for sandbox pods.
+                          Defaults to the instance namespace.
+                        type: string
+                      persistence:
+                        description: Persistence configures PVC-backed persistent
+                          workspaces for sandbox pods.
+                        properties:
+                          enabled:
+                            description: Enabled enables PVC-backed workspaces instead
+                              of emptyDir.
+                            type: boolean
+                          size:
+                            default: 10Gi
+                            description: Size is the storage size for workspace PVCs
+                              (e.g. "10Gi").
+                            type: string
+                          storageClass:
+                            description: StorageClass is the storage class for workspace
+                              PVCs.
+                            type: string
+                        type: object
+                      resourceTiers:
+                        additionalProperties:
+                          description: ResourceRequirements describes the compute
+                            resource requirements.
+                          properties:
+                            claims:
+                              description: |-
+                                Claims lists the names of resources, defined in spec.resourceClaims,
+                                that are used by this container.
+
+                                This is an alpha field and requires enabling the
+                                DynamicResourceAllocation feature gate.
+
+                                This field is immutable. It can only be set for containers.
+                              items:
+                                description: ResourceClaim references one entry in
+                                  PodSpec.ResourceClaims.
+                                properties:
+                                  name:
+                                    description: |-
+                                      Name must match the name of one entry in pod.spec.resourceClaims of
+                                      the Pod where this field is used. It makes that resource available
+                                      inside a container.
+                                    type: string
+                                  request:
+                                    description: |-
+                                      Request is the name chosen for a request in the referenced claim.
+                                      If empty, everything from the claim is made available, otherwise
+                                      only the result of this request.
+                                    type: string
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
+                            limits:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: |-
+                                Limits describes the maximum amount of compute resources allowed.
+                                More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                              type: object
+                            requests:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: |-
+                                Requests describes the minimum amount of compute resources required.
+                                If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                                otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                                More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                              type: object
+                          type: object
+                        description: ResourceTiers defines named resource presets
+                          for sandbox pods.
+                        type: object
+                      resources:
+                        description: Resources specifies default compute resources
+                          for sandbox pods.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                    type: object
+                  managedInferenceModel:
+                    default: claude-sonnet-4-6
+                    description: ManagedInferenceModel is the default model for managed
+                      inference.
+                    type: string
+                  managedInferenceProvider:
+                    default: anthropic
+                    description: |-
+                      ManagedInferenceProvider is the LLM provider for the legacy single-key mode.
+                      Ignored when per-provider keys are used.
+                    type: string
+                  managedInferenceSecretRef:
+                    description: |-
+                      ManagedInferenceSecretRef references a Secret containing platform LLM API keys.
+                      The Secret should contain one or more of these keys:
+                        PAPERCLIP_MANAGED_ANTHROPIC_API_KEY
+                        PAPERCLIP_MANAGED_OPENAI_API_KEY
+                        PAPERCLIP_MANAGED_GEMINI_API_KEY
+                        PAPERCLIP_MANAGED_OPENROUTER_API_KEY
+                      For backward compatibility, PAPERCLIP_MANAGED_INFERENCE_API_KEY is also supported.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
                 type: object
               auth:
                 description: Auth configures authentication settings.
                 properties:
+                  adminUser:
+                    description: |-
+                      AdminUser configures the initial admin user that is created automatically
+                      when the instance is first deployed. If not set, the instance will show
+                      a setup screen requiring manual bootstrap.
+                    properties:
+                      email:
+                        description: Email is the admin user's email address (used
+                          as login).
+                        type: string
+                      name:
+                        default: Admin
+                        description: Name is the admin user's display name.
+                        type: string
+                      passwordSecretRef:
+                        description: PasswordSecretRef references a Secret containing
+                          the admin password.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    required:
+                    - email
+                    - passwordSecretRef
+                    type: object
+                  apple:
+                    description: |-
+                      Apple configures Apple OAuth sign-in.
+                      The referenced Secret must contain APPLE_CLIENT_ID and APPLE_CLIENT_SECRET keys.
+                    properties:
+                      credentialsSecretRef:
+                        description: |-
+                          CredentialsSecretRef references a Secret containing provider-specific OAuth
+                          client credentials (e.g. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    required:
+                    - credentialsSecretRef
+                    type: object
+                  email:
+                    description: Email configures email sending for verification and
+                      password reset.
+                    properties:
+                      from:
+                        description: From is the sender address for outbound emails
+                          (e.g. "Paperclip <noreply@example.com>").
+                        type: string
+                      resendAPIKeySecretRef:
+                        description: ResendAPIKeySecretRef references a Secret key
+                          containing the Resend API key.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      verificationRequired:
+                        description: VerificationRequired requires email verification
+                          before a session can be created.
+                        type: boolean
+                    type: object
+                  google:
+                    description: |-
+                      Google configures Google OAuth sign-in.
+                      The referenced Secret must contain GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET keys.
+                    properties:
+                      credentialsSecretRef:
+                        description: |-
+                          CredentialsSecretRef references a Secret containing provider-specific OAuth
+                          client credentials (e.g. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    required:
+                    - credentialsSecretRef
+                    type: object
                   secretRef:
                     description: |-
                       SecretRef references a Secret containing the BETTER_AUTH_SECRET key.
@@ -1077,6 +1428,14 @@ spec:
                     required:
                     - enabled
                     type: object
+                  replicas:
+                    default: 1
+                    description: |-
+                      Replicas is the desired number of Paperclip server pods.
+                      Ignored when autoScaling is enabled (the HPA manages replicas).
+                    format: int32
+                    minimum: 1
+                    type: integer
                   tolerations:
                     description: Tolerations specifies pod tolerations.
                     items:
@@ -1340,12 +1699,63 @@ spec:
                 required:
                 - schedule
                 type: object
+              connections:
+                description: |-
+                  Connections configures third-party OAuth provider credentials for
+                  the Paperclip connections system (GitHub, GitLab, Slack, etc.).
+                properties:
+                  credentialsKey:
+                    default: PAPERCLIP_OAUTH_CREDENTIALS
+                    description: |-
+                      CredentialsKey is the key within the Secret that holds the JSON credentials.
+                      Defaults to "PAPERCLIP_OAUTH_CREDENTIALS".
+                    type: string
+                  credentialsSecretRef:
+                    description: |-
+                      CredentialsSecretRef references a Secret containing OAuth client credentials.
+                      The Secret must contain a key (default "PAPERCLIP_OAUTH_CREDENTIALS") whose
+                      value is a JSON object mapping provider IDs to {clientId, clientSecret} pairs.
+                      Example: {"github":{"clientId":"...","clientSecret":"..."},"slack":{"clientId":"...","clientSecret":"..."}}
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  providersConfigRef:
+                    description: |-
+                      ProvidersConfigRef optionally references a ConfigMap containing a
+                      PAPERCLIP_OAUTH_PROVIDERS key with a JSON provider catalog to extend
+                      or override the built-in provider definitions at runtime.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                required:
+                - credentialsSecretRef
+                type: object
               database:
                 description: Database configures the PostgreSQL connection.
                 properties:
                   externalURL:
-                    description: ExternalURL is the PostgreSQL connection string for
-                      external mode.
+                    description: |-
+                      ExternalURL is the PostgreSQL connection string for external mode.
+                      WARNING: This value is stored in plaintext in the CRD spec (etcd). If the URL contains
+                      credentials, use ExternalURLSecretRef instead to reference a Secret.
                     type: string
                   externalURLSecretRef:
                     description: ExternalURLSecretRef references a Secret containing
@@ -3530,6 +3940,22 @@ spec:
               image:
                 description: Image specifies the Paperclip container image to deploy.
                 properties:
+                  autoUpdate:
+                    description: AutoUpdate enables automatic image updates by polling
+                      the registry for new digests.
+                    properties:
+                      enabled:
+                        default: false
+                        description: Enabled controls whether auto-update polling
+                          is active.
+                        type: boolean
+                      interval:
+                        default: 5m
+                        description: Interval is the polling interval (e.g. "5m",
+                          "1h"). Minimum is 1m.
+                        pattern: ^\d+(s|m|h)$
+                        type: string
+                    type: object
                   digest:
                     description: Digest overrides the tag with an image digest (e.g.
                       sha256:abc...).
@@ -3566,10 +3992,17 @@ spec:
                     description: Repository is the container image repository.
                     type: string
                   tag:
-                    default: latest
-                    description: Tag is the container image tag.
+                    description: |-
+                      Tag is the container image tag. Either tag or digest must be set; there is
+                      no default, because pinning to a mutable tag like :latest can silently pull
+                      a broken upstream build.
                     type: string
                 type: object
+                x-kubernetes-validations:
+                - message: 'spec.image: one of tag or digest must be set (pinning
+                    to :latest is not supported, pick a specific upstream release
+                    tag)'
+                  rule: size(self.tag) > 0 || size(self.digest) > 0
               initContainers:
                 description: InitContainers specifies additional init containers.
                 items:
@@ -5003,6 +5436,52 @@ spec:
                 description: Networking configures service, ingress, and WebSocket
                   settings.
                 properties:
+                  httpRoute:
+                    description: |-
+                      HTTPRoute configures a Gateway API HTTPRoute.
+                      This is an alternative to Ingress for clusters using the Gateway API.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Annotations specifies additional annotations
+                          for the HTTPRoute.
+                        type: object
+                      enabled:
+                        default: false
+                        description: Enabled controls whether an HTTPRoute is created.
+                        type: boolean
+                      hostnames:
+                        description: Hostnames specifies the hostnames matched by
+                          this HTTPRoute.
+                        items:
+                          type: string
+                        type: array
+                      parentRefs:
+                        description: |-
+                          ParentRefs specifies the Gateways this HTTPRoute attaches to.
+                          Each ref identifies a Gateway by name (and optionally namespace and sectionName).
+                        items:
+                          description: HTTPRouteParentRef identifies a Gateway (or
+                            other parent) that the HTTPRoute attaches to.
+                          properties:
+                            name:
+                              description: Name is the name of the Gateway.
+                              type: string
+                            namespace:
+                              description: |-
+                                Namespace is the namespace of the Gateway.
+                                Defaults to the same namespace as the HTTPRoute.
+                              type: string
+                            sectionName:
+                              description: SectionName is the name of a specific listener
+                                on the Gateway to attach to.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                    type: object
                   ingress:
                     description: Ingress configures the Kubernetes Ingress.
                     properties:
@@ -5136,6 +5615,49 @@ spec:
                         default: false
                         description: Enabled controls whether metrics are exposed.
                         type: boolean
+                      grafanaDashboard:
+                        description: GrafanaDashboard configures auto-provisioned
+                          Grafana dashboard ConfigMaps.
+                        properties:
+                          enabled:
+                            default: false
+                            description: Enabled enables Grafana dashboard ConfigMap
+                              creation.
+                            type: boolean
+                          folder:
+                            default: Paperclip
+                            description: Folder is the Grafana folder to place the
+                              dashboards in.
+                            type: string
+                          labels:
+                            additionalProperties:
+                              type: string
+                            description: 'Labels to add to the dashboard ConfigMaps
+                              (in addition to grafana_dashboard: "1").'
+                            type: object
+                        type: object
+                      prometheusRule:
+                        description: |-
+                          PrometheusRule configures an auto-provisioned PrometheusRule with default
+                          operator alerts (reconcile errors, instance not-ready, restart rate).
+                        properties:
+                          enabled:
+                            default: false
+                            description: Enabled enables PrometheusRule creation with
+                              operator alerts.
+                            type: boolean
+                          labels:
+                            additionalProperties:
+                              type: string
+                            description: Labels to add to the PrometheusRule (e.g.
+                              for Prometheus rule selector matching).
+                            type: object
+                          runbookBaseURL:
+                            default: https://paperclip.inc/docs/operators/paperclip/runbooks
+                            description: RunbookBaseURL is the base URL for alert
+                              runbook links.
+                            type: string
+                        type: object
                       serviceMonitor:
                         description: ServiceMonitor enables creating a Prometheus
                           ServiceMonitor.
@@ -5265,6 +5787,142 @@ spec:
                         format: int32
                         type: integer
                     type: object
+                  type:
+                    default: auto
+                    description: |-
+                      Type specifies the probe mechanism: "auto" (default), "http", or "tcp".
+                      "auto" uses HTTP probes in open mode and TCP probes in authenticated/single-tenant mode
+                      (where /api/health returns 403 without credentials).
+                    enum:
+                    - auto
+                    - http
+                    - tcp
+                    type: string
+                type: object
+              redis:
+                description: Redis configures Redis for rate limiting and caching
+                  in multi-replica deployments.
+                properties:
+                  externalURL:
+                    description: |-
+                      ExternalURL is the Redis connection string for external mode (e.g. "redis://host:6379").
+                      WARNING: This value is stored in plaintext in the CRD spec (etcd). If the URL contains
+                      credentials, use ExternalURLSecretRef instead to reference a Secret.
+                    type: string
+                  externalURLSecretRef:
+                    description: ExternalURLSecretRef references a Secret key containing
+                      the Redis URL.
+                    properties:
+                      key:
+                        description: The key of the secret to select from.  Must be
+                          a valid secret key.
+                        type: string
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      optional:
+                        description: Specify whether the Secret or its key must be
+                          defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                  managed:
+                    description: Managed configures the operator-managed Redis instance.
+                    properties:
+                      image:
+                        default: redis:7-alpine
+                        description: Image is the Redis container image.
+                        type: string
+                      resources:
+                        description: Resources specifies compute resources for the
+                          Redis container.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                      storageClass:
+                        description: StorageClass is the storage class for the Redis
+                          PVC.
+                        type: string
+                      storageSize:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        default: 1Gi
+                        description: StorageSize is the PVC size for Redis data. Defaults
+                          to 1Gi.
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                    type: object
+                  mode:
+                    default: managed
+                    description: 'Mode selects the Redis mode: "managed" (operator-provisioned)
+                      or "external" (user-provided URL).'
+                    enum:
+                    - managed
+                    - external
+                    type: string
                 type: object
               resources:
                 description: Resources specifies the compute resources for the Paperclip
@@ -5566,14 +6224,18 @@ spec:
                         description: AllowEgressCIDRs specifies additional CIDR blocks
                           the pod can reach.
                         items:
+                          pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$
                           type: string
                         type: array
+                        x-kubernetes-list-type: set
                       allowIngressCIDRs:
                         description: AllowIngressCIDRs specifies additional CIDR blocks
                           allowed to reach the Paperclip service.
                         items:
+                          pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$
                           type: string
                         type: array
+                        x-kubernetes-list-type: set
                       enabled:
                         default: true
                         description: Enabled controls whether a NetworkPolicy is created.
@@ -5829,6 +6491,49 @@ spec:
                         type: object
                     type: object
                 type: object
+              selfConfigure:
+                description: |-
+                  SelfConfigure enables agents to modify their own Instance via
+                  PaperclipSelfConfig resources, gated by an action allowlist.
+                properties:
+                  allowedActions:
+                    description: |-
+                      AllowedActions restricts which action categories the agent can perform.
+                      If empty and enabled is true, no actions are allowed (fail-safe).
+                    items:
+                      description: |-
+                        SelfConfigAction names a category of mutation. Used by
+                        Instance.spec.selfConfigure.allowedActions to gate what the agent may
+                        request via PaperclipSelfConfig.
+                      enum:
+                      - plugins
+                      - config
+                      - envVars
+                      type: string
+                    maxItems: 3
+                    type: array
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled enables self-configuration for this instance. When true, the
+                      agent can create PaperclipSelfConfig resources to modify its own spec.
+                    type: boolean
+                type: object
+              shareProcessNamespace:
+                default: true
+                description: |-
+                  ShareProcessNamespace enables PID namespace sharing between all containers
+                  in the pod. When true, the infrastructure (pause) container becomes PID 1
+                  and reaps zombie processes, which prevents accumulation of defunct helper
+                  processes (git, plugins, shells) under a Node.js server that does not call
+                  waitpid(). Defaults to true.
+
+                  Security note: enabling this lets every container in the pod see and signal
+                  every other container's processes. A compromised sidecar could send signals
+                  to the server and vice versa. Set to false to keep per-container PID
+                  isolation; you are then responsible for reaping zombies (e.g. by baking
+                  tini or dumb-init into the image).
+                type: boolean
               sidecars:
                 description: Sidecars specifies additional sidecar containers.
                 items:
@@ -7289,10 +7994,170 @@ spec:
                         type: string
                     type: object
                 type: object
+              suspended:
+                default: false
+                description: |-
+                  Suspended scales the workload to zero replicas when true. Non-runtime
+                  resources (Service, ConfigMap, RBAC, NetworkPolicy, PVC) remain fully
+                  managed. Set to false to resume normal operation.
+                type: boolean
+              tailscale:
+                description: |-
+                  Tailscale configures an ephemeral Tailscale sidecar that Serves the
+                  Paperclip app over the tailnet.
+                properties:
+                  authKey:
+                    description: |-
+                      AuthKey references a Secret containing the Tailscale auth key. The Secret
+                      must have a key matching AuthKey.Key (default: "authkey"). Use an
+                      ephemeral+reusable key from the Tailscale admin console.
+                    properties:
+                      key:
+                        default: authkey
+                        description: Key is the key within the referenced Secret.
+                          Defaults to "authkey".
+                        type: string
+                      secretRef:
+                        description: SecretRef references the Secret containing the
+                          auth key.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    required:
+                    - secretRef
+                    type: object
+                  enabled:
+                    default: false
+                    description: Enabled enables the Tailscale sidecar.
+                    type: boolean
+                  hostname:
+                    description: Hostname sets the Tailscale device name (defaults
+                      to the instance name).
+                    type: string
+                  image:
+                    description: Image configures the Tailscale sidecar container
+                      image.
+                    properties:
+                      digest:
+                        description: Digest is the container image digest for supply-chain
+                          security.
+                        type: string
+                      repository:
+                        default: ghcr.io/tailscale/tailscale
+                        description: Repository is the container image repository.
+                        type: string
+                      tag:
+                        default: stable
+                        description: Tag is the container image tag.
+                        type: string
+                    type: object
+                  mode:
+                    default: serve
+                    description: |-
+                      Mode selects the Tailscale exposure mode.
+                      "serve" exposes the instance to tailnet members only (default).
+                      "funnel" exposes the instance to the public internet via Tailscale Funnel.
+                    enum:
+                    - serve
+                    - funnel
+                    type: string
+                  resources:
+                    description: Resources specifies compute resources for the Tailscale
+                      sidecar container.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This is an alpha field and requires enabling the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                type: object
             type: object
           status:
             description: InstanceStatus defines the observed state of Instance.
             properties:
+              autoUpdate:
+                description: AutoUpdate tracks the state of automatic image update
+                  checks.
+                properties:
+                  lastCheckTime:
+                    description: LastCheckTime is when the operator last queried the
+                      registry.
+                    format: date-time
+                    type: string
+                  lastError:
+                    description: LastError records the most recent error from a registry
+                      check, if any.
+                    type: string
+                  lastUpdateTime:
+                    description: LastUpdateTime is when the digest last changed and
+                      a rollout was triggered.
+                    format: date-time
+                    type: string
+                  resolvedDigest:
+                    description: ResolvedDigest is the most recently observed digest
+                      for the configured tag.
+                    type: string
+                type: object
               backup:
                 description: Backup tracks the state of the latest backup operation.
                 properties:
@@ -7378,11 +8243,25 @@ spec:
                     type: string
                   databaseStatefulSet:
                     type: string
+                  grafanaDashboardInstance:
+                    type: string
+                  grafanaDashboardOperator:
+                    type: string
+                  httpRoute:
+                    type: string
                   ingress:
                     type: string
                   networkPolicy:
                     type: string
                   persistentVolumeClaim:
+                    type: string
+                  prometheusRule:
+                    type: string
+                  redisPVC:
+                    type: string
+                  redisService:
+                    type: string
+                  redisStatefulSet:
                     type: string
                   service:
                     type: string
@@ -7408,6 +8287,7 @@ spec:
                 - BackingUp
                 - Restoring
                 - Updating
+                - Suspended
                 type: string
               restore:
                 description: Restore tracks the state of the latest restore operation.
