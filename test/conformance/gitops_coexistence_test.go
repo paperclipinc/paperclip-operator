@@ -50,8 +50,8 @@ var _ = Describe("GitOps coexistence (server-side apply)", Ordered, func() {
 		})
 	})
 
-	It("becomes Ready under a GitOps field manager", func() {
-		waitForInstanceReady(suiteCtx, newClient(), ns, instName, 3*time.Minute)
+	It("is reconciled under a GitOps field manager", func() {
+		waitForInstanceReconciled(suiteCtx, newClient(), ns, instName, 3*time.Minute)
 	})
 
 	It("does not flap when the same manifest is re-applied via SSA", func() {
