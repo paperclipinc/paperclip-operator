@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1210,6 +1211,124 @@ func TestDefaultSecurityContextOnOnboardAndBootstrap(t *testing.T) {
 	}
 	if *bsc.AllowPrivilegeEscalation != false {
 		t.Error("bootstrap: expected default AllowPrivilegeEscalation=false")
+	}
+}
+
+// findInitContainer returns the named init container from the StatefulSet, or
+// nil if absent, along with its index in the init-container array.
+func findInitContainer(sts *appsv1.StatefulSet, name string) (*corev1.Container, int) {
+	for i := range sts.Spec.Template.Spec.InitContainers {
+		if sts.Spec.Template.Spec.InitContainers[i].Name == name {
+			return &sts.Spec.Template.Spec.InitContainers[i], i
+		}
+	}
+	return nil, -1
+}
+
+func TestBuildStatefulSetNoSeedInstanceAdminWhenNil(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	// PlatformAdmin defaults to nil.
+	sts := BuildStatefulSet(instance, nil)
+
+	if c, _ := findInitContainer(sts, "seed-instance-admin"); c != nil {
+		t.Error("expected no seed-instance-admin init container when PlatformAdmin is nil")
+	}
+
+	// Also ensure an empty email (non-nil but blank) is treated as absent.
+	instance.Spec.Deployment.PlatformAdmin = &paperclipv1alpha1.PlatformAdminSpec{}
+	sts = BuildStatefulSet(instance, nil)
+	if c, _ := findInitContainer(sts, "seed-instance-admin"); c != nil {
+		t.Error("expected no seed-instance-admin init container when email is empty")
+	}
+}
+
+func TestBuildStatefulSetSeedInstanceAdmin(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	instance.Spec.Deployment.PlatformAdmin = &paperclipv1alpha1.PlatformAdminSpec{
+		Email:  "platform-admin@paperclip.inc",
+		Name:   "Platform Admin",
+		UserID: "user_123",
+	}
+	sts := BuildStatefulSet(instance, nil)
+
+	seed, seedIdx := findInitContainer(sts, "seed-instance-admin")
+	if seed == nil {
+		t.Fatal("expected seed-instance-admin init container")
+	}
+
+	// Uses the same image as the main server container.
+	mainImage := sts.Spec.Template.Spec.Containers[0].Image
+	if seed.Image != mainImage {
+		t.Errorf("expected seed image %q to match main container image %q", seed.Image, mainImage)
+	}
+
+	// Runs the exact seed CLI command, mirroring how onboard invokes the CLI.
+	joined := strings.Join(append(seed.Command, seed.Args...), " ")
+	if !strings.Contains(joined, "pnpm paperclipai auth seed-instance-admin") {
+		t.Errorf("expected seed command to run 'pnpm paperclipai auth seed-instance-admin', got %q", joined)
+	}
+
+	// Must come AFTER the onboard init container (onboard runs migrations first).
+	_, onboardIdx := findInitContainer(sts, "onboard")
+	if onboardIdx < 0 {
+		t.Fatal("expected onboard init container")
+	}
+	if seedIdx <= onboardIdx {
+		t.Errorf("expected seed-instance-admin (idx %d) to come after onboard (idx %d)", seedIdx, onboardIdx)
+	}
+
+	// Env: DATABASE_URL plus the three PAPERCLIP_SEED_ADMIN_* vars.
+	env := map[string]corev1.EnvVar{}
+	for _, e := range seed.Env {
+		env[e.Name] = e
+	}
+	if _, ok := env["DATABASE_URL"]; !ok {
+		t.Error("expected DATABASE_URL env var on seed init container")
+	}
+	if env["PAPERCLIP_SEED_ADMIN_EMAIL"].Value != "platform-admin@paperclip.inc" {
+		t.Errorf("expected PAPERCLIP_SEED_ADMIN_EMAIL, got %q", env["PAPERCLIP_SEED_ADMIN_EMAIL"].Value)
+	}
+	if env["PAPERCLIP_SEED_ADMIN_NAME"].Value != "Platform Admin" {
+		t.Errorf("expected PAPERCLIP_SEED_ADMIN_NAME, got %q", env["PAPERCLIP_SEED_ADMIN_NAME"].Value)
+	}
+	if env["PAPERCLIP_SEED_ADMIN_USER_ID"].Value != "user_123" {
+		t.Errorf("expected PAPERCLIP_SEED_ADMIN_USER_ID, got %q", env["PAPERCLIP_SEED_ADMIN_USER_ID"].Value)
+	}
+
+	// SecurityContext mirrors the restricted PSS default used by onboard.
+	sc := seed.SecurityContext
+	if sc == nil {
+		t.Fatal("expected security context on seed init container")
+	}
+	if sc.RunAsNonRoot == nil || !*sc.RunAsNonRoot {
+		t.Error("seed: expected RunAsNonRoot=true")
+	}
+	if sc.AllowPrivilegeEscalation == nil || *sc.AllowPrivilegeEscalation {
+		t.Error("seed: expected AllowPrivilegeEscalation=false")
+	}
+	if sc.Capabilities == nil || len(sc.Capabilities.Drop) == 0 || sc.Capabilities.Drop[0] != "ALL" {
+		t.Error("seed: expected drop ALL capabilities")
+	}
+	if sc.SeccompProfile == nil || sc.SeccompProfile.Type != corev1.SeccompProfileTypeRuntimeDefault {
+		t.Error("seed: expected RuntimeDefault seccomp profile")
+	}
+}
+
+func TestBuildStatefulSetSeedInstanceAdminOptionalEnvOmitted(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	instance.Spec.Deployment.PlatformAdmin = &paperclipv1alpha1.PlatformAdminSpec{
+		Email: "only-email@paperclip.inc",
+	}
+	sts := BuildStatefulSet(instance, nil)
+
+	seed, _ := findInitContainer(sts, "seed-instance-admin")
+	if seed == nil {
+		t.Fatal("expected seed-instance-admin init container")
+	}
+	for _, e := range seed.Env {
+		if e.Name == "PAPERCLIP_SEED_ADMIN_NAME" || e.Name == "PAPERCLIP_SEED_ADMIN_USER_ID" {
+			t.Errorf("expected optional env %q to be omitted when unset", e.Name)
+		}
 	}
 }
 

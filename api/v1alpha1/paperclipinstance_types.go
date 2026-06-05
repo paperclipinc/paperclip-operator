@@ -235,6 +235,32 @@ type DeploymentSpec struct {
 	// AllowedHostnames is a list of allowed hostnames for CORS.
 	// +optional
 	AllowedHostnames []string `json:"allowedHostnames,omitempty"`
+
+	// PlatformAdmin, when set, bootstraps the instance with a platform-managed
+	// instance-admin so it is never left in the single-tenant "claim this
+	// instance" state. The operator runs an idempotent seed init container
+	// (`pnpm paperclipai auth seed-instance-admin`) after onboarding/migrations.
+	// +optional
+	PlatformAdmin *PlatformAdminSpec `json:"platformAdmin,omitempty"`
+}
+
+// PlatformAdminSpec describes the platform-managed instance-admin seeded into a
+// freshly provisioned Paperclip instance for the shared cloud. It maps to the
+// PAPERCLIP_SEED_ADMIN_* env vars consumed by the seed-instance-admin CLI.
+type PlatformAdminSpec struct {
+	// Email is the platform instance-admin's email address. Required.
+	// Wired to PAPERCLIP_SEED_ADMIN_EMAIL.
+	Email string `json:"email"`
+
+	// Name is the optional display name for the platform instance-admin.
+	// Wired to PAPERCLIP_SEED_ADMIN_NAME.
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// UserID is the optional stable user ID to assign to the platform
+	// instance-admin (e.g. the Paperclip ID). Wired to PAPERCLIP_SEED_ADMIN_USER_ID.
+	// +optional
+	UserID string `json:"userID,omitempty"`
 }
 
 // DatabaseSpec configures PostgreSQL.
