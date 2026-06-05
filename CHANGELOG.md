@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.13.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.12.1...v0.13.0) (2026-06-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove fabricated managed-inference config
+* remove managed Redis (app does not consume it)
+* emit PAPERCLIP_BIND/PAPERCLIP_BIND_HOST instead of legacy HOST
+* align deployment mode enum with app (local_trusted|authenticated)
+
+### Features
+
+* add app-native DB backup config (PAPERCLIP_DB_BACKUP_*) ([4e067c4](https://github.com/paperclipinc/paperclip-operator/commit/4e067c42236bef08210142c026a2406eb89b31b4))
+* add AWS Secrets Manager secrets provider ([c2104a7](https://github.com/paperclipinc/paperclip-operator/commit/c2104a7929a210b8c5645d78d8de3a60160c3192))
+* add E2B sandbox API key (spec.adapters.e2b -&gt; E2B_API_KEY) ([5fdc615](https://github.com/paperclipinc/paperclip-operator/commit/5fdc6157f913544ca4a434284e5a40f0246cac2e))
+* align deployment mode enum with app (local_trusted|authenticated) ([a12efd9](https://github.com/paperclipinc/paperclip-operator/commit/a12efd9b8c44c1ba44a167d8ae4c410da8797120))
+* emit PAPERCLIP_BIND/PAPERCLIP_BIND_HOST instead of legacy HOST ([ec38bb9](https://github.com/paperclipinc/paperclip-operator/commit/ec38bb9b98413cf31f5ab8aaebc5984285722196))
+* remove fabricated managed-inference config ([45a4518](https://github.com/paperclipinc/paperclip-operator/commit/45a4518eacd2755c3825304e8895a5b369a7754c))
+* remove managed Redis (app does not consume it) ([afde2f5](https://github.com/paperclipinc/paperclip-operator/commit/afde2f5434c18df0f26232b937990ed99de84f00))
+
+
+### Bug Fixes
+
+* **controller:** only watch Gateway API HTTPRoute when its CRD is installed ([b9e3874](https://github.com/paperclipinc/paperclip-operator/commit/b9e3874ce07b708549512462c449a8ff772a653f))
+* **image:** default app image to ghcr.io/paperclipai/paperclip ([80092b5](https://github.com/paperclipinc/paperclip-operator/commit/80092b5dd1abf6b98e41a8470c1a972350fd2ba0))
+* **statefulset:** make the app actually boot under restricted security ([d753fa9](https://github.com/paperclipinc/paperclip-operator/commit/d753fa90f700d5f35ab93342c950a12a9a6a8ba2))
+
 ## [0.12.1](https://github.com/paperclipinc/paperclip-operator/compare/v0.12.0...v0.12.1) (2026-06-04)
 
 
