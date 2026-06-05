@@ -1939,6 +1939,31 @@ spec:
                     - local_trusted
                     - authenticated
                     type: string
+                  platformAdmin:
+                    description: |-
+                      PlatformAdmin, when set, bootstraps the instance with a platform-managed
+                      instance-admin so it is never left in the single-tenant "claim this
+                      instance" state. The operator runs an idempotent seed init container
+                      (`pnpm paperclipai auth seed-instance-admin`) after onboarding/migrations.
+                    properties:
+                      email:
+                        description: |-
+                          Email is the platform instance-admin's email address. Required.
+                          Wired to PAPERCLIP_SEED_ADMIN_EMAIL.
+                        type: string
+                      name:
+                        description: |-
+                          Name is the optional display name for the platform instance-admin.
+                          Wired to PAPERCLIP_SEED_ADMIN_NAME.
+                        type: string
+                      userID:
+                        description: |-
+                          UserID is the optional stable user ID to assign to the platform
+                          instance-admin (e.g. the Paperclip ID). Wired to PAPERCLIP_SEED_ADMIN_USER_ID.
+                        type: string
+                    required:
+                    - email
+                    type: object
                   publicURL:
                     description: |-
                       PublicURL is the externally-reachable URL for the Paperclip instance.

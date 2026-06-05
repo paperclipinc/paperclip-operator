@@ -95,6 +95,15 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance, extraPodAnnotations 
 	// before the server starts. Only runs when config doesn't exist yet.
 	podSpec.InitContainers = append(podSpec.InitContainers, buildOnboardInitContainer(instance))
 
+	// Platform instance-admin seed init container: idempotently seeds a
+	// platform-managed instance-admin so the instance is never left in the
+	// single-tenant "claim this instance" state. Must run AFTER onboard, which
+	// applies the DB migrations the seed depends on (init containers run in
+	// array order).
+	if instance.Spec.Deployment.PlatformAdmin != nil && instance.Spec.Deployment.PlatformAdmin.Email != "" {
+		podSpec.InitContainers = append(podSpec.InitContainers, buildSeedInstanceAdminInitContainer(instance))
+	}
+
 	// Tailscale sidecar (ephemeral node that Serves the app over the tailnet)
 	if instance.Spec.Tailscale.Enabled {
 		podSpec.Containers = append(podSpec.Containers, BuildTailscaleContainer(instance))
@@ -870,6 +879,43 @@ exit 1
 		Command:         []string{"/bin/sh", "-c"},
 		Args:            []string{script},
 		Env:             buildEnvVars(instance),
+		EnvFrom:         instance.Spec.EnvFrom,
+		VolumeMounts:    buildVolumeMounts(instance),
+		SecurityContext: paperclipContainerSecurityContext(instance),
+	}
+}
+
+// buildSeedInstanceAdminInitContainer runs the product CLI command that
+// idempotently seeds a platform-managed instance-admin. It mirrors the onboard
+// init container's invocation (pnpm paperclipai ...), securityContext, and
+// volume mounts. It must be scheduled AFTER the onboard init container because
+// onboard applies the DB migrations this command relies on.
+//
+// The CLI reads DATABASE_URL (reused from the same external-database secret/uri
+// source the main app container uses, via buildBackupDBEnvVars) plus the
+// PAPERCLIP_SEED_ADMIN_* env vars sourced from spec.deployment.platformAdmin.
+func buildSeedInstanceAdminInitContainer(instance *paperclipv1alpha1.Instance) corev1.Container {
+	image := containerImage(instance)
+	admin := instance.Spec.Deployment.PlatformAdmin
+
+	// DATABASE_URL (+ DB_PASSWORD for managed mode) from the same source the
+	// main app container resolves its DB connection from.
+	env := buildBackupDBEnvVars(instance)
+	env = append(env, corev1.EnvVar{Name: "PAPERCLIP_SEED_ADMIN_EMAIL", Value: admin.Email})
+	if admin.Name != "" {
+		env = append(env, corev1.EnvVar{Name: "PAPERCLIP_SEED_ADMIN_NAME", Value: admin.Name})
+	}
+	if admin.UserID != "" {
+		env = append(env, corev1.EnvVar{Name: "PAPERCLIP_SEED_ADMIN_USER_ID", Value: admin.UserID})
+	}
+
+	return corev1.Container{
+		Name:            "seed-instance-admin",
+		Image:           image,
+		ImagePullPolicy: imagePullPolicy(instance),
+		Command:         []string{"/bin/sh", "-c"},
+		Args:            []string{"exec pnpm paperclipai auth seed-instance-admin"},
+		Env:             env,
 		EnvFrom:         instance.Spec.EnvFrom,
 		VolumeMounts:    buildVolumeMounts(instance),
 		SecurityContext: paperclipContainerSecurityContext(instance),
