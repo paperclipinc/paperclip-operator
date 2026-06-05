@@ -1491,9 +1491,9 @@ func TestAutomountServiceAccountTokenOnlyUnderK8sExecution(t *testing.T) {
 
 // hasRule reports whether rules contain an entry matching the given apiGroup +
 // resource with the exact set of verbs (order-insensitive).
-func hasRule(rules []rbacv1.PolicyRule, apiGroup, resource string, verbs ...string) bool {
+func hasRule(rules []rbacv1.PolicyRule, apiGroup, res string, verbs ...string) bool {
 	for _, r := range rules {
-		if !containsStr(r.APIGroups, apiGroup) || !containsStr(r.Resources, resource) {
+		if !containsStr(r.APIGroups, apiGroup) || !containsStr(r.Resources, res) {
 			continue
 		}
 		if len(r.Verbs) != len(verbs) {
