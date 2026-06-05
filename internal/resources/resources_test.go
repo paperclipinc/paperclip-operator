@@ -1462,19 +1462,20 @@ func TestBuildExecutionEnvVarsNilEmitsNothing(t *testing.T) {
 }
 
 func TestAutomountServiceAccountTokenOnlyUnderK8sExecution(t *testing.T) {
-	// Default (no execution): token must stay off.
+	// Default (no execution): field stays UNSET (preserves prior behavior; setting
+	// it to false changed non-k8s instances and broke conformance readiness).
 	plain := newTestInstance("plain")
 	plainSts := BuildStatefulSet(plain, nil)
-	if amt := plainSts.Spec.Template.Spec.AutomountServiceAccountToken; amt == nil || *amt {
-		t.Errorf("expected automountServiceAccountToken=false for non-k8s execution, got %v", amt)
+	if amt := plainSts.Spec.Template.Spec.AutomountServiceAccountToken; amt != nil {
+		t.Errorf("expected automountServiceAccountToken unset for non-k8s execution, got %v", *amt)
 	}
 
-	// Mode=any: token must stay off.
+	// Mode=any: field stays UNSET.
 	anyInst := newTestInstance("any")
 	anyInst.Spec.Adapters.Execution = &paperclipv1alpha1.ExecutionSpec{Mode: "any"}
 	anySts := BuildStatefulSet(anyInst, nil)
-	if amt := anySts.Spec.Template.Spec.AutomountServiceAccountToken; amt == nil || *amt {
-		t.Errorf("expected automountServiceAccountToken=false for mode=any, got %v", amt)
+	if amt := anySts.Spec.Template.Spec.AutomountServiceAccountToken; amt != nil {
+		t.Errorf("expected automountServiceAccountToken unset for mode=any, got %v", *amt)
 	}
 
 	// Mode=kubernetes: token must be mounted.

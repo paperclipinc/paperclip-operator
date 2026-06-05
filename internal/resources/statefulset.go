@@ -32,10 +32,14 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance, extraPodAnnotations 
 		TerminationGracePeriodSeconds: Ptr(int64(30)),
 		ServiceAccountName:            ServiceAccountName(instance),
 		ShareProcessNamespace:         shareProcessNamespace(instance),
-		// The app only needs to reach the in-cluster Kubernetes API when it is
-		// forced onto the Kubernetes sandbox provider. Keep the token off for
-		// every other instance to minimize attack surface.
-		AutomountServiceAccountToken: Ptr(IsKubernetesExecution(instance)),
+	}
+
+	// The app only needs to reach the in-cluster Kubernetes API when it is forced
+	// onto the Kubernetes sandbox provider; mount the SA token only then. Otherwise
+	// leave it UNSET (the prior default) so non-k8s instances are unchanged — setting
+	// it to false here broke minimal-instance readiness in conformance.
+	if IsKubernetesExecution(instance) {
+		podSpec.AutomountServiceAccountToken = Ptr(true)
 	}
 
 	// Pod security context
