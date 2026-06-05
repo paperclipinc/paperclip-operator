@@ -54,6 +54,20 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # 1e sandboxed agent execution: the manager must hold these so it can delegate
+  # them to the app ServiceAccount via the per-instance execution ClusterRole.
+  - apiGroups: [""]
+    resources: ["resourcequotas", "limitranges"]
+    verbs: ["get", "create"]
+  - apiGroups: ["node.k8s.io"]
+    resources: ["runtimeclasses"]
+    verbs: ["get", "use"]
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumnetworkpolicies"]
+    verbs: ["get", "create"]
+  - apiGroups: ["agents.x-k8s.io"]
+    resources: ["sandboxes"]
+    verbs: ["get", "create", "delete"]
   # Apps
   - apiGroups: ["apps"]
     resources: ["statefulsets"]

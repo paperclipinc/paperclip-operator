@@ -295,6 +295,92 @@ spec:
                     required:
                     - apiKeySecretRef
                     type: object
+                  execution:
+                    description: |-
+                      Execution configures the @paperclipai/plugin-kubernetes in-cluster sandbox
+                      provider, which runs agents as per-tenant batch/v1 Jobs (or agent-sandbox
+                      CRs) inside this cluster. This is the current k8s execution path and
+                      supersedes the older in-tree CloudSandbox wiring (the two are independent;
+                      do not enable both for the same execution surface).
+
+                      When Mode is "kubernetes" the operator additionally provisions a ClusterRole
+                      (namespaces, ServiceAccounts, Roles/RoleBindings, ResourceQuotas,
+                      LimitRanges, NetworkPolicies, CiliumNetworkPolicies, Secrets, Jobs, Sandbox
+                      CRs) and mounts the app ServiceAccount token so the app can reach the
+                      in-cluster Kubernetes API.
+                    properties:
+                      kubernetes:
+                        description: |-
+                          Kubernetes configures the in-cluster Kubernetes sandbox backend. Honored
+                          only when Mode is "kubernetes".
+                        properties:
+                          backend:
+                            default: job
+                            description: |-
+                              Backend selects the per-run workload primitive. "job" runs each agent as a
+                              fire-and-forget batch/v1 Job (log-scraped output); "sandbox-cr" creates a
+                              long-lived agent-sandbox CR (agents.x-k8s.io) that the server execs into.
+                              Maps to PAPERCLIP_K8S_BACKEND.
+                            enum:
+                            - job
+                            - sandbox-cr
+                            type: string
+                          egressAllowCIDRs:
+                            description: |-
+                              EgressAllowCIDRs is the list of CIDR blocks tenant agent pods may reach, in
+                              addition to (or as the standard-mode substitute for) the FQDN allow-list.
+                              Maps to PAPERCLIP_K8S_EGRESS_ALLOW_CIDRS (comma-separated).
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: set
+                          egressAllowFQDNs:
+                            description: |-
+                              EgressAllowFQDNs is the list of fully-qualified domain names tenant agent
+                              pods may reach (e.g. the LLM gateway and required APIs). Enforced exactly
+                              only under EgressMode "cilium". Maps to PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS
+                              (comma-separated).
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: set
+                          egressMode:
+                            description: |-
+                              EgressMode selects how per-tenant egress is enforced. "standard" uses plain
+                              NetworkPolicy (CIDR-only, cannot match FQDNs); "cilium" uses a
+                              CiliumNetworkPolicy for exact FQDN allow-listing (requires the Cilium CNI).
+                              Maps to PAPERCLIP_K8S_EGRESS_MODE.
+                            enum:
+                            - standard
+                            - cilium
+                            type: string
+                          namespacePrefix:
+                            description: |-
+                              NamespacePrefix is prepended to each derived per-tenant namespace name,
+                              letting multiple instances share a cluster without namespace collisions.
+                              Maps to PAPERCLIP_K8S_NAMESPACE_PREFIX.
+                            type: string
+                          runtimeClassName:
+                            description: |-
+                              RuntimeClassName is the RuntimeClass applied to agent pods (e.g. "gvisor")
+                              for an extra kernel-isolation boundary. Maps to
+                              PAPERCLIP_K8S_RUNTIME_CLASS_NAME. When set, the execution ClusterRole also
+                              grants get/use on the named RuntimeClass.
+                            type: string
+                        type: object
+                      mode:
+                        default: any
+                        description: |-
+                          Mode selects the forced execution policy. "kubernetes" forces all agent
+                          runs onto the in-cluster Kubernetes sandbox provider and refuses local
+                          execution; "any" leaves execution unrestricted (the operator emits no
+                          PAPERCLIP_EXECUTION_MODE and provisions no execution RBAC).
+                          Maps to PAPERCLIP_EXECUTION_MODE.
+                        enum:
+                        - kubernetes
+                        - any
+                        type: string
+                    type: object
                 type: object
               auth:
                 description: Auth configures authentication settings.

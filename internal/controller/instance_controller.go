@@ -120,6 +120,14 @@ type InstanceReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update;patch;delete
+// Execution RBAC: the operator must hold these so it can grant them to the app
+// ServiceAccount via the per-instance execution ClusterRole (RBAC escalation
+// prevention requires the granter to already hold every verb it delegates).
+// +kubebuilder:rbac:groups="",resources=resourcequotas,verbs=get;create
+// +kubebuilder:rbac:groups="",resources=limitranges,verbs=get;create
+// +kubebuilder:rbac:groups=node.k8s.io,resources=runtimeclasses,verbs=get;use
+// +kubebuilder:rbac:groups=cilium.io,resources=ciliumnetworkpolicies,verbs=get;create
+// +kubebuilder:rbac:groups=agents.x-k8s.io,resources=sandboxes,verbs=get;create;delete
 
 // Reconcile moves the cluster state toward the desired state defined by the Instance CR.
 //
@@ -222,6 +230,13 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if cs := instance.Spec.Adapters.CloudSandbox; cs != nil && cs.Enabled {
 		if err := r.reconcileSandboxRBAC(ctx, instance); err != nil {
 			return r.handleError(ctx, instance, "SandboxRBAC", err)
+		}
+	}
+
+	// 1.6. Execution RBAC (if the in-cluster Kubernetes sandbox provider is forced)
+	if resources.IsKubernetesExecution(instance) {
+		if err := r.reconcileExecutionRBAC(ctx, instance); err != nil {
+			return r.handleError(ctx, instance, "ExecutionRBAC", err)
 		}
 	}
 
@@ -488,6 +503,42 @@ func (r *InstanceReconciler) reconcileSandboxRBAC(ctx context.Context, instance 
 		if err != nil {
 			return fmt.Errorf("reconciling sandbox ClusterRoleBinding: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// reconcileExecutionRBAC provisions the cluster-scoped Role + binding that lets
+// the app drive the @paperclipai/plugin-kubernetes sandbox provider in-cluster.
+func (r *InstanceReconciler) reconcileExecutionRBAC(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
+	desiredCR := resources.BuildExecutionClusterRole(instance)
+	if desiredCR == nil {
+		return nil
+	}
+	crObj := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: desiredCR.Name},
+	}
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, crObj, func() error {
+		crObj.Labels = desiredCR.Labels
+		crObj.Rules = desiredCR.Rules
+		return nil // cluster-scoped: no owner reference
+	})
+	if err != nil {
+		return fmt.Errorf("reconciling execution ClusterRole: %w", err)
+	}
+
+	desiredCRB := resources.BuildExecutionClusterRoleBinding(instance)
+	crbObj := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: desiredCRB.Name},
+	}
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, crbObj, func() error {
+		crbObj.Labels = desiredCRB.Labels
+		crbObj.RoleRef = desiredCRB.RoleRef
+		crbObj.Subjects = desiredCRB.Subjects
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("reconciling execution ClusterRoleBinding: %w", err)
 	}
 
 	return nil
