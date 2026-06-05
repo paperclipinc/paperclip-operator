@@ -516,6 +516,90 @@ type AdaptersSpec struct {
 	// are configured at runtime in the UI - see docs/deploy/runtime-configured-features.md.)
 	// +optional
 	E2B *E2BSpec `json:"e2b,omitempty"`
+
+	// Execution configures the @paperclipai/plugin-kubernetes in-cluster sandbox
+	// provider, which runs agents as per-tenant batch/v1 Jobs (or agent-sandbox
+	// CRs) inside this cluster. This is the current k8s execution path and
+	// supersedes the older in-tree CloudSandbox wiring (the two are independent;
+	// do not enable both for the same execution surface).
+	//
+	// When Mode is "kubernetes" the operator additionally provisions a ClusterRole
+	// + ClusterRoleBinding scoped to the resources the plugin creates per tenant
+	// (namespaces, ServiceAccounts, Roles/RoleBindings, ResourceQuotas,
+	// LimitRanges, NetworkPolicies, CiliumNetworkPolicies, Secrets, Jobs, Sandbox
+	// CRs) and mounts the app ServiceAccount token so the app can reach the
+	// in-cluster Kubernetes API.
+	// +optional
+	Execution *ExecutionSpec `json:"execution,omitempty"`
+}
+
+// ExecutionSpec configures the agent execution policy enforced by the Paperclip
+// server at boot. It maps to PAPERCLIP_EXECUTION_MODE and the PAPERCLIP_K8S_*
+// env vars consumed by the fork's execution-policy bootstrap.
+type ExecutionSpec struct {
+	// Mode selects the forced execution policy. "kubernetes" forces all agent
+	// runs onto the in-cluster Kubernetes sandbox provider and refuses local
+	// execution; "any" leaves execution unrestricted (the operator emits no
+	// PAPERCLIP_EXECUTION_MODE and provisions no execution RBAC).
+	// Maps to PAPERCLIP_EXECUTION_MODE.
+	// +kubebuilder:default="any"
+	// +kubebuilder:validation:Enum=kubernetes;any
+	// +optional
+	Mode string `json:"mode,omitempty"`
+
+	// Kubernetes configures the in-cluster Kubernetes sandbox backend. Honored
+	// only when Mode is "kubernetes".
+	// +optional
+	Kubernetes *K8sExecutionSpec `json:"kubernetes,omitempty"`
+}
+
+// K8sExecutionSpec configures the @paperclipai/plugin-kubernetes backend. Each
+// field maps to a PAPERCLIP_K8S_* env var read by the server at boot.
+type K8sExecutionSpec struct {
+	// Backend selects the per-run workload primitive. "job" runs each agent as a
+	// fire-and-forget batch/v1 Job (log-scraped output); "sandbox-cr" creates a
+	// long-lived agent-sandbox CR (agents.x-k8s.io) that the server execs into.
+	// Maps to PAPERCLIP_K8S_BACKEND.
+	// +kubebuilder:default="job"
+	// +kubebuilder:validation:Enum=job;sandbox-cr
+	// +optional
+	Backend string `json:"backend,omitempty"`
+
+	// RuntimeClassName is the RuntimeClass applied to agent pods (e.g. "gvisor")
+	// for an extra kernel-isolation boundary. Maps to
+	// PAPERCLIP_K8S_RUNTIME_CLASS_NAME. When set, the execution ClusterRole also
+	// grants get/use on the named RuntimeClass.
+	// +optional
+	RuntimeClassName string `json:"runtimeClassName,omitempty"`
+
+	// EgressMode selects how per-tenant egress is enforced. "standard" uses plain
+	// NetworkPolicy (CIDR-only, cannot match FQDNs); "cilium" uses a
+	// CiliumNetworkPolicy for exact FQDN allow-listing (requires the Cilium CNI).
+	// Maps to PAPERCLIP_K8S_EGRESS_MODE.
+	// +kubebuilder:validation:Enum=standard;cilium
+	// +optional
+	EgressMode string `json:"egressMode,omitempty"`
+
+	// EgressAllowFQDNs is the list of fully-qualified domain names tenant agent
+	// pods may reach (e.g. the LLM gateway and required APIs). Enforced exactly
+	// only under EgressMode "cilium". Maps to PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS
+	// (comma-separated).
+	// +optional
+	// +listType=set
+	EgressAllowFQDNs []string `json:"egressAllowFQDNs,omitempty"`
+
+	// EgressAllowCIDRs is the list of CIDR blocks tenant agent pods may reach, in
+	// addition to (or as the standard-mode substitute for) the FQDN allow-list.
+	// Maps to PAPERCLIP_K8S_EGRESS_ALLOW_CIDRS (comma-separated).
+	// +optional
+	// +listType=set
+	EgressAllowCIDRs []string `json:"egressAllowCIDRs,omitempty"`
+
+	// NamespacePrefix is prepended to each derived per-tenant namespace name,
+	// letting multiple instances share a cluster without namespace collisions.
+	// Maps to PAPERCLIP_K8S_NAMESPACE_PREFIX.
+	// +optional
+	NamespacePrefix string `json:"namespacePrefix,omitempty"`
 }
 
 // E2BSpec configures the E2B sandbox provider API key.

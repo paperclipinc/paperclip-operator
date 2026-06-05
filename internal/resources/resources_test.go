@@ -6,6 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -1385,5 +1386,263 @@ func TestStatefulSetReplicas(t *testing.T) {
 	instance.Spec.Suspended = true
 	if got := StatefulSetReplicas(instance); got != 0 {
 		t.Errorf("expected 0 replicas when suspended, got %d", got)
+	}
+}
+
+// --- Execution policy (in-cluster Kubernetes sandbox provider) ---
+
+func k8sExecutionInstance(name string) *paperclipv1alpha1.Instance {
+	instance := newTestInstance(name)
+	instance.Spec.Adapters.Execution = &paperclipv1alpha1.ExecutionSpec{
+		Mode: "kubernetes",
+		Kubernetes: &paperclipv1alpha1.K8sExecutionSpec{
+			Backend:          "job",
+			RuntimeClassName: "gvisor",
+			EgressMode:       "cilium",
+			EgressAllowFQDNs: []string{"api.anthropic.com", "gateway.example.com"},
+			EgressAllowCIDRs: []string{"10.0.0.0/8"},
+			NamespacePrefix:  "pc-tenant",
+		},
+	}
+	return instance
+}
+
+func TestBuildExecutionEnvVars(t *testing.T) {
+	instance := k8sExecutionInstance("exec")
+	sts := BuildStatefulSet(instance, nil)
+	container := sts.Spec.Template.Spec.Containers[0]
+
+	envMap := make(map[string]string)
+	for _, env := range container.Env {
+		if env.Value != "" {
+			envMap[env.Name] = env.Value
+		}
+	}
+
+	want := map[string]string{
+		"PAPERCLIP_EXECUTION_MODE":         "kubernetes",
+		"PAPERCLIP_K8S_IN_CLUSTER":         "true",
+		"PAPERCLIP_K8S_BACKEND":            "job",
+		"PAPERCLIP_K8S_RUNTIME_CLASS_NAME": "gvisor",
+		"PAPERCLIP_K8S_EGRESS_MODE":        "cilium",
+		"PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS": "api.anthropic.com,gateway.example.com",
+		"PAPERCLIP_K8S_EGRESS_ALLOW_CIDRS": "10.0.0.0/8",
+		"PAPERCLIP_K8S_NAMESPACE_PREFIX":   "pc-tenant",
+	}
+	for k, v := range want {
+		if envMap[k] != v {
+			t.Errorf("expected %s=%q, got %q", k, v, envMap[k])
+		}
+	}
+}
+
+func TestBuildExecutionEnvVarsModeAnyEmitsNothing(t *testing.T) {
+	instance := newTestInstance("exec-any")
+	instance.Spec.Adapters.Execution = &paperclipv1alpha1.ExecutionSpec{Mode: "any"}
+	sts := BuildStatefulSet(instance, nil)
+	container := sts.Spec.Template.Spec.Containers[0]
+
+	for _, env := range container.Env {
+		if strings.HasPrefix(env.Name, "PAPERCLIP_EXECUTION_MODE") || strings.HasPrefix(env.Name, "PAPERCLIP_K8S_") {
+			t.Errorf("unexpected execution env var %q when mode=any", env.Name)
+		}
+	}
+}
+
+func TestBuildExecutionEnvVarsNilEmitsNothing(t *testing.T) {
+	instance := newTestInstance("exec-nil")
+	sts := BuildStatefulSet(instance, nil)
+	container := sts.Spec.Template.Spec.Containers[0]
+
+	for _, env := range container.Env {
+		if env.Name == "PAPERCLIP_EXECUTION_MODE" || strings.HasPrefix(env.Name, "PAPERCLIP_K8S_") {
+			t.Errorf("unexpected execution env var %q when execution unset", env.Name)
+		}
+	}
+}
+
+func TestAutomountServiceAccountTokenOnlyUnderK8sExecution(t *testing.T) {
+	// Default (no execution): token must stay off.
+	plain := newTestInstance("plain")
+	plainSts := BuildStatefulSet(plain, nil)
+	if amt := plainSts.Spec.Template.Spec.AutomountServiceAccountToken; amt == nil || *amt {
+		t.Errorf("expected automountServiceAccountToken=false for non-k8s execution, got %v", amt)
+	}
+
+	// Mode=any: token must stay off.
+	anyInst := newTestInstance("any")
+	anyInst.Spec.Adapters.Execution = &paperclipv1alpha1.ExecutionSpec{Mode: "any"}
+	anySts := BuildStatefulSet(anyInst, nil)
+	if amt := anySts.Spec.Template.Spec.AutomountServiceAccountToken; amt == nil || *amt {
+		t.Errorf("expected automountServiceAccountToken=false for mode=any, got %v", amt)
+	}
+
+	// Mode=kubernetes: token must be mounted.
+	k8sInst := k8sExecutionInstance("k8s")
+	k8sSts := BuildStatefulSet(k8sInst, nil)
+	if amt := k8sSts.Spec.Template.Spec.AutomountServiceAccountToken; amt == nil || !*amt {
+		t.Errorf("expected automountServiceAccountToken=true for k8s execution, got %v", amt)
+	}
+	// The SA must be wired onto the pod.
+	if k8sSts.Spec.Template.Spec.ServiceAccountName != ServiceAccountName(k8sInst) {
+		t.Errorf("expected ServiceAccountName=%q, got %q", ServiceAccountName(k8sInst), k8sSts.Spec.Template.Spec.ServiceAccountName)
+	}
+}
+
+// hasRule reports whether rules contain an entry matching the given apiGroup +
+// resource with the exact set of verbs (order-insensitive).
+func hasRule(rules []rbacv1.PolicyRule, apiGroup, resource string, verbs ...string) bool {
+	for _, r := range rules {
+		if !containsStr(r.APIGroups, apiGroup) || !containsStr(r.Resources, resource) {
+			continue
+		}
+		if len(r.Verbs) != len(verbs) {
+			continue
+		}
+		all := true
+		for _, v := range verbs {
+			if !containsStr(r.Verbs, v) {
+				all = false
+				break
+			}
+		}
+		if all {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStr(haystack []string, needle string) bool {
+	for _, h := range haystack {
+		if h == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildExecutionClusterRoleRules(t *testing.T) {
+	instance := k8sExecutionInstance("exec")
+	cr := BuildExecutionClusterRole(instance)
+	if cr == nil {
+		t.Fatal("expected a ClusterRole for k8s execution, got nil")
+	}
+	if cr.Name != "test-ns-exec-execution" {
+		t.Errorf("expected name test-ns-exec-execution, got %q", cr.Name)
+	}
+
+	checks := []struct {
+		group    string
+		resource string
+		verbs    []string
+	}{
+		{"", "namespaces", []string{"get", "create"}},
+		{"", "serviceaccounts", []string{"get", "create"}},
+		{"rbac.authorization.k8s.io", "roles", []string{"get", "create"}},
+		{"rbac.authorization.k8s.io", "rolebindings", []string{"get", "create"}},
+		{"", "resourcequotas", []string{"get", "create"}},
+		{"", "limitranges", []string{"get", "create"}},
+		{"", "secrets", []string{"get", "create"}},
+		{"networking.k8s.io", "networkpolicies", []string{"get", "create"}},
+		{"", "pods", []string{"get", "list"}},
+		{"", "pods/log", []string{"get"}},
+		{"", "pods/exec", []string{"create", "get"}},
+		{"batch", "jobs", []string{"get", "list", "create", "delete"}},
+		// cilium egress mode is enabled in the fixture
+		{"cilium.io", "ciliumnetworkpolicies", []string{"get", "create"}},
+	}
+	for _, c := range checks {
+		if !hasRule(cr.Rules, c.group, c.resource, c.verbs...) {
+			t.Errorf("missing/incorrect rule for %s/%s verbs=%v", c.group, c.resource, c.verbs)
+		}
+	}
+
+	// runtimeClassName=gvisor -> get/use scoped to the named class.
+	foundRuntime := false
+	for _, r := range cr.Rules {
+		if containsStr(r.Resources, "runtimeclasses") {
+			foundRuntime = true
+			if !containsStr(r.ResourceNames, "gvisor") {
+				t.Errorf("expected runtimeclasses rule scoped to gvisor, got resourceNames=%v", r.ResourceNames)
+			}
+			if !containsStr(r.Verbs, "get") || !containsStr(r.Verbs, "use") {
+				t.Errorf("expected runtimeclasses verbs get/use, got %v", r.Verbs)
+			}
+		}
+	}
+	if !foundRuntime {
+		t.Error("expected a runtimeclasses rule when RuntimeClassName is set")
+	}
+
+	// Backend=job should NOT grant the sandbox CR.
+	if hasRule(cr.Rules, "agents.x-k8s.io", "sandboxes", "get", "create", "delete") {
+		t.Error("did not expect agents.x-k8s.io/sandboxes rule for job backend")
+	}
+
+	// Must never grant cluster-admin wildcards.
+	for _, r := range cr.Rules {
+		if containsStr(r.Verbs, "*") || containsStr(r.Resources, "*") || containsStr(r.APIGroups, "*") {
+			t.Errorf("execution ClusterRole must not contain wildcards, got rule %+v", r)
+		}
+	}
+}
+
+func TestBuildExecutionClusterRoleSandboxCRBackend(t *testing.T) {
+	instance := k8sExecutionInstance("exec-cr")
+	instance.Spec.Adapters.Execution.Kubernetes.Backend = "sandbox-cr"
+	instance.Spec.Adapters.Execution.Kubernetes.EgressMode = "standard"
+	instance.Spec.Adapters.Execution.Kubernetes.RuntimeClassName = ""
+	cr := BuildExecutionClusterRole(instance)
+	if cr == nil {
+		t.Fatal("expected a ClusterRole, got nil")
+	}
+
+	if !hasRule(cr.Rules, "agents.x-k8s.io", "sandboxes", "get", "create", "delete") {
+		t.Error("expected agents.x-k8s.io/sandboxes rule for sandbox-cr backend")
+	}
+	// standard egress -> no cilium rule.
+	for _, r := range cr.Rules {
+		if containsStr(r.Resources, "ciliumnetworkpolicies") {
+			t.Error("did not expect ciliumnetworkpolicies rule under standard egress mode")
+		}
+		if containsStr(r.Resources, "runtimeclasses") {
+			t.Error("did not expect runtimeclasses rule when RuntimeClassName is empty")
+		}
+	}
+}
+
+func TestBuildExecutionClusterRoleAbsentWhenModeAny(t *testing.T) {
+	anyInst := newTestInstance("any")
+	anyInst.Spec.Adapters.Execution = &paperclipv1alpha1.ExecutionSpec{Mode: "any"}
+	if cr := BuildExecutionClusterRole(anyInst); cr != nil {
+		t.Errorf("expected nil ClusterRole for mode=any, got %v", cr.Name)
+	}
+	if crb := BuildExecutionClusterRoleBinding(anyInst); crb != nil {
+		t.Error("expected nil ClusterRoleBinding for mode=any")
+	}
+
+	nilInst := newTestInstance("nil")
+	if cr := BuildExecutionClusterRole(nilInst); cr != nil {
+		t.Errorf("expected nil ClusterRole when execution unset, got %v", cr.Name)
+	}
+}
+
+func TestBuildExecutionClusterRoleBinding(t *testing.T) {
+	instance := k8sExecutionInstance("exec")
+	binding := BuildExecutionClusterRoleBinding(instance)
+	if binding == nil {
+		t.Fatal("expected a ClusterRoleBinding, got nil")
+	}
+	if binding.Name != "test-ns-exec-execution" {
+		t.Errorf("expected name test-ns-exec-execution, got %q", binding.Name)
+	}
+	if binding.RoleRef.Kind != "ClusterRole" || binding.RoleRef.Name != "test-ns-exec-execution" {
+		t.Errorf("unexpected roleRef %+v", binding.RoleRef)
+	}
+	if len(binding.Subjects) != 1 ||
+		binding.Subjects[0].Name != ServiceAccountName(instance) ||
+		binding.Subjects[0].Namespace != instance.Namespace {
+		t.Errorf("expected binding subject to be the app SA, got %+v", binding.Subjects)
 	}
 }

@@ -29,6 +29,15 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - limitranges
+  - pods/exec
+  - resourcequotas
+  verbs:
+  - create
+  - get
+- apiGroups:
+  - ""
+  resources:
   - namespaces
   verbs:
   - create
@@ -49,13 +58,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods/exec
-  verbs:
-  - create
-  - get
-- apiGroups:
-  - ""
-  resources:
   - pods/log
   verbs:
   - get
@@ -70,6 +72,14 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - agents.x-k8s.io
+  resources:
+  - sandboxes
+  verbs:
+  - create
+  - delete
+  - get
 - apiGroups:
   - apps
   resources:
@@ -117,6 +127,13 @@ rules:
   - list
   - watch
 - apiGroups:
+  - cilium.io
+  resources:
+  - ciliumnetworkpolicies
+  verbs:
+  - create
+  - get
+- apiGroups:
   - gateway.networking.k8s.io
   resources:
   - httproutes
@@ -153,6 +170,13 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - node.k8s.io
+  resources:
+  - runtimeclasses
+  verbs:
+  - get
+  - use
 - apiGroups:
   - paperclip.inc
   resources:

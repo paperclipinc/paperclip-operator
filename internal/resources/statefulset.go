@@ -32,6 +32,10 @@ func BuildStatefulSet(instance *paperclipv1alpha1.Instance, extraPodAnnotations 
 		TerminationGracePeriodSeconds: Ptr(int64(30)),
 		ServiceAccountName:            ServiceAccountName(instance),
 		ShareProcessNamespace:         shareProcessNamespace(instance),
+		// The app only needs to reach the in-cluster Kubernetes API when it is
+		// forced onto the Kubernetes sandbox provider. Keep the token off for
+		// every other instance to minimize attack surface.
+		AutomountServiceAccountToken: Ptr(IsKubernetesExecution(instance)),
 	}
 
 	// Pod security context
@@ -423,6 +427,9 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 	// Cloud sandbox
 	vars = append(vars, buildCloudSandboxEnvVars(instance)...)
 
+	// In-cluster Kubernetes execution policy (@paperclipai/plugin-kubernetes)
+	vars = append(vars, buildExecutionEnvVars(instance)...)
+
 	// OAuth connections
 	if instance.Spec.Connections != nil {
 		conn := instance.Spec.Connections
@@ -688,6 +695,65 @@ func buildCloudSandboxEnvVars(instance *paperclipv1alpha1.Instance) []corev1.Env
 				Value: string(b),
 			})
 		}
+	}
+
+	return vars
+}
+
+// IsKubernetesExecution reports whether the instance is configured to force
+// agent execution onto the in-cluster Kubernetes sandbox provider. This gates
+// the execution RBAC and the app ServiceAccount-token mount.
+func IsKubernetesExecution(instance *paperclipv1alpha1.Instance) bool {
+	ex := instance.Spec.Adapters.Execution
+	return ex != nil && ex.Mode == "kubernetes"
+}
+
+// buildExecutionEnvVars translates spec.adapters.execution into the
+// PAPERCLIP_EXECUTION_MODE / PAPERCLIP_K8S_* env vars consumed by the fork's
+// execution-policy bootstrap. Only emitted when execution is configured; when
+// Mode is "any" (or the block is nil) the bootstrap stays unrestricted, so we
+// emit nothing.
+func buildExecutionEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
+	ex := instance.Spec.Adapters.Execution
+	if ex == nil || ex.Mode != "kubernetes" {
+		return nil
+	}
+
+	vars := []corev1.EnvVar{
+		{Name: "PAPERCLIP_EXECUTION_MODE", Value: "kubernetes"},
+		// The operator only ever wires the in-cluster path: the app talks to the
+		// local kube-apiserver via its mounted ServiceAccount token.
+		{Name: "PAPERCLIP_K8S_IN_CLUSTER", Value: "true"},
+	}
+
+	k := ex.Kubernetes
+	if k == nil {
+		return vars
+	}
+
+	if k.Backend != "" {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_K8S_BACKEND", Value: k.Backend})
+	}
+	if k.RuntimeClassName != "" {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_K8S_RUNTIME_CLASS_NAME", Value: k.RuntimeClassName})
+	}
+	if k.EgressMode != "" {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_K8S_EGRESS_MODE", Value: k.EgressMode})
+	}
+	if len(k.EgressAllowFQDNs) > 0 {
+		vars = append(vars, corev1.EnvVar{
+			Name:  "PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS",
+			Value: strings.Join(k.EgressAllowFQDNs, ","),
+		})
+	}
+	if len(k.EgressAllowCIDRs) > 0 {
+		vars = append(vars, corev1.EnvVar{
+			Name:  "PAPERCLIP_K8S_EGRESS_ALLOW_CIDRS",
+			Value: strings.Join(k.EgressAllowCIDRs, ","),
+		})
+	}
+	if k.NamespacePrefix != "" {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_K8S_NAMESPACE_PREFIX", Value: k.NamespacePrefix})
 	}
 
 	return vars
