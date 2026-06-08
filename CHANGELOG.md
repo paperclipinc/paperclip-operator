@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.13.0...v0.14.0) (2026-06-05)
+
+
+### Features
+
+* **instance:** in-cluster Kubernetes execution config + scoped RBAC ([#77](https://github.com/paperclipinc/paperclip-operator/issues/77)) ([7f65f03](https://github.com/paperclipinc/paperclip-operator/commit/7f65f03744cf5ce6f1774925e1d072809bbfa976))
+* **instance:** seed platform instance-admin via init container ([#75](https://github.com/paperclipinc/paperclip-operator/issues/75)) ([2b07483](https://github.com/paperclipinc/paperclip-operator/commit/2b07483edb1b51eec1e250e179aa1851e6bd2bf9))
+
 ## [0.13.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.12.1...v0.13.0) (2026-06-05)
 
 
