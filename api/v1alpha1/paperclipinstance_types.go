@@ -531,6 +531,13 @@ type AdaptersSpec struct {
 	// in-cluster Kubernetes API.
 	// +optional
 	Execution *ExecutionSpec `json:"execution,omitempty"`
+
+	// Registry declaratively defines which agent harnesses ("adapters") this
+	// instance offers and how each is wired. Marshaled to the PAPERCLIP_ADAPTERS
+	// env var consumed by the server's adapter-registry bootstrap. When empty,
+	// the server uses its built-in defaults (no PAPERCLIP_ADAPTERS emitted).
+	// +optional
+	Registry []AdapterRegistryEntry `json:"registry,omitempty"`
 }
 
 // ExecutionSpec configures the agent execution policy enforced by the Paperclip
@@ -600,6 +607,43 @@ type K8sExecutionSpec struct {
 	// Maps to PAPERCLIP_K8S_NAMESPACE_PREFIX.
 	// +optional
 	NamespacePrefix string `json:"namespacePrefix,omitempty"`
+}
+
+// AdapterRegistryEntry is one declarative agent-harness entry. Mirrors the
+// server's shared AdapterRegistryEntry shape (packages/shared) and the plugin's
+// local copy. Runtime fields are honored only for sandboxed (Kubernetes)
+// execution. Keep the json tags in sync with the server zod schema.
+type AdapterRegistryEntry struct {
+	// AdapterType is the harness identifier, e.g. "opencode_local".
+	// +kubebuilder:validation:MinLength=1
+	AdapterType string `json:"adapterType"`
+
+	// Enabled controls availability in the agent-creation picker. Defaults true.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// RuntimeImage is the container image the agent Job/Sandbox runs (k8s only).
+	// +optional
+	RuntimeImage string `json:"runtimeImage,omitempty"`
+
+	// EnvKeys are process-env keys forwarded into the agent Job (k8s only),
+	// e.g. ANTHROPIC_API_KEY.
+	// +optional
+	EnvKeys []string `json:"envKeys,omitempty"`
+
+	// AllowFQDNs is the egress FQDN allow-list for the agent pod (k8s only).
+	// +optional
+	AllowFQDNs []string `json:"allowFqdns,omitempty"`
+
+	// ProbeCommand is the adapter liveness/probe command (k8s only).
+	// +optional
+	ProbeCommand []string `json:"probeCommand,omitempty"`
+
+	// DefaultEnv are NON-SECRET env defaults injected as the base layer for the
+	// agent Job (process-env secrets override them), e.g. ANTHROPIC_BASE_URL set
+	// to the in-cluster inference gateway. Never put secrets here.
+	// +optional
+	DefaultEnv map[string]string `json:"defaultEnv,omitempty"`
 }
 
 // E2BSpec configures the E2B sandbox provider API key.
