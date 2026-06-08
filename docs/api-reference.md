@@ -37,6 +37,31 @@ _Appears in:_
 | `deleteRecoveryDays` _integer_ | DeleteRecoveryDays is the AWS recovery window (in days) for deleted secrets. | 30 | Optional: \{\} <br /> |
 
 
+#### AdapterRegistryEntry
+
+
+
+AdapterRegistryEntry is one declarative agent-harness entry. Mirrors the
+server's shared AdapterRegistryEntry shape (packages/shared) and the plugin's
+local copy. Runtime fields are honored only for sandboxed (Kubernetes)
+execution. Keep the json tags in sync with the server zod schema.
+
+
+
+_Appears in:_
+- [AdaptersSpec](#adaptersspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `adapterType` _string_ | AdapterType is the harness identifier, e.g. "opencode_local". |  | MinLength: 1 <br /> |
+| `enabled` _boolean_ | Enabled controls availability in the agent-creation picker. Defaults true. |  | Optional: \{\} <br /> |
+| `runtimeImage` _string_ | RuntimeImage is the container image the agent Job/Sandbox runs (k8s only). |  | Optional: \{\} <br /> |
+| `envKeys` _string array_ | EnvKeys are process-env keys forwarded into the agent Job (k8s only),<br />e.g. ANTHROPIC_API_KEY. |  | Optional: \{\} <br /> |
+| `allowFqdns` _string array_ | AllowFQDNs is the egress FQDN allow-list for the agent pod (k8s only). |  | Optional: \{\} <br /> |
+| `probeCommand` _string array_ | ProbeCommand is the adapter liveness/probe command (k8s only). |  | Optional: \{\} <br /> |
+| `defaultEnv` _object (keys:string, values:string)_ | DefaultEnv are NON-SECRET env defaults injected as the base layer for the<br />agent Job (process-env secrets override them), e.g. ANTHROPIC_BASE_URL set<br />to the in-cluster inference gateway. Never put secrets here. |  | Optional: \{\} <br /> |
+
+
 #### AdaptersSpec
 
 
@@ -53,6 +78,8 @@ _Appears in:_
 | `apiKeysSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | APIKeys references Secrets containing LLM provider API keys.<br />The Secret should contain keys like ANTHROPIC_API_KEY, OPENAI_API_KEY, etc. |  | Optional: \{\} <br /> |
 | `cloudSandbox` _[CloudSandboxSpec](#cloudsandboxspec)_ | CloudSandbox configures cloud-based agent execution in isolated Kubernetes pods. |  | Optional: \{\} <br /> |
 | `e2b` _[E2BSpec](#e2bspec)_ | E2B supplies the API key for the E2B sandbox provider. The provider must be<br />enabled as a plugin and selected per-Environment in the Paperclip UI; the<br />operator only wires E2B_API_KEY. (Modal and Cloudflare sandbox credentials<br />are configured at runtime in the UI - see docs/deploy/runtime-configured-features.md.) |  | Optional: \{\} <br /> |
+| `execution` _[ExecutionSpec](#executionspec)_ | Execution configures the @paperclipai/plugin-kubernetes in-cluster sandbox<br />provider, which runs agents as per-tenant batch/v1 Jobs (or agent-sandbox<br />CRs) inside this cluster. This is the current k8s execution path and<br />supersedes the older in-tree CloudSandbox wiring (the two are independent;<br />do not enable both for the same execution surface).<br />When Mode is "kubernetes" the operator additionally provisions a ClusterRole<br />(namespaces, ServiceAccounts, Roles/RoleBindings, ResourceQuotas,<br />LimitRanges, NetworkPolicies, CiliumNetworkPolicies, Secrets, Jobs, Sandbox<br />CRs) and mounts the app ServiceAccount token so the app can reach the<br />in-cluster Kubernetes API. |  | Optional: \{\} <br /> |
+| `registry` _[AdapterRegistryEntry](#adapterregistryentry) array_ | Registry declaratively defines which agent harnesses ("adapters") this<br />instance offers and how each is wired. Marshaled to the PAPERCLIP_ADAPTERS<br />env var consumed by the server's adapter-registry bootstrap. When empty,<br />the server uses its built-in defaults (no PAPERCLIP_ADAPTERS emitted). |  | Optional: \{\} <br /> |
 
 
 #### AdminUserSpec
@@ -333,6 +360,7 @@ _Appears in:_
 | `exposure` _string_ | Exposure controls network exposure: "private" (ClusterIP only) or "public" (Ingress/LoadBalancer). | private | Enum: [private public] <br />Optional: \{\} <br /> |
 | `publicURL` _string_ | PublicURL is the externally-reachable URL for the Paperclip instance.<br />Required when exposure is "public". |  | Optional: \{\} <br /> |
 | `allowedHostnames` _string array_ | AllowedHostnames is a list of allowed hostnames for CORS. |  | Optional: \{\} <br /> |
+| `platformAdmin` _[PlatformAdminSpec](#platformadminspec)_ | PlatformAdmin, when set, bootstraps the instance with a platform-managed<br />instance-admin so it is never left in the single-tenant "claim this<br />instance" state. The operator runs an idempotent seed init container<br />(`pnpm paperclipai auth seed-instance-admin`) after onboarding/migrations. |  | Optional: \{\} <br /> |
 
 
 #### E2BSpec
@@ -349,6 +377,25 @@ _Appears in:_
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `apiKeySecretRef` _[SecretKeySelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#secretkeyselector-v1-core)_ | APIKeySecretRef references a Secret key holding the E2B API key. |  |  |
+
+
+#### ExecutionSpec
+
+
+
+ExecutionSpec configures the agent execution policy enforced by the Paperclip
+server at boot. It maps to PAPERCLIP_EXECUTION_MODE and the PAPERCLIP_K8S_*
+env vars consumed by the fork's execution-policy bootstrap.
+
+
+
+_Appears in:_
+- [AdaptersSpec](#adaptersspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `mode` _string_ | Mode selects the forced execution policy. "kubernetes" forces all agent<br />runs onto the in-cluster Kubernetes sandbox provider and refuses local<br />execution; "any" leaves execution unrestricted (the operator emits no<br />PAPERCLIP_EXECUTION_MODE and provisions no execution RBAC).<br />Maps to PAPERCLIP_EXECUTION_MODE. | any | Enum: [kubernetes any] <br />Optional: \{\} <br /> |
+| `kubernetes` _[K8sExecutionSpec](#k8sexecutionspec)_ | Kubernetes configures the in-cluster Kubernetes sandbox backend. Honored<br />only when Mode is "kubernetes". |  | Optional: \{\} <br /> |
 
 
 #### GrafanaDashboardSpec
@@ -563,6 +610,28 @@ _Appears in:_
 | `extraVolumes` _[Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#volume-v1-core) array_ | ExtraVolumes specifies additional volumes to add to the pod. |  | Optional: \{\} <br /> |
 | `extraVolumeMounts` _[VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#volumemount-v1-core) array_ | ExtraVolumeMounts specifies additional volume mounts for the Paperclip container. |  | Optional: \{\} <br /> |
 | `podAnnotations` _object (keys:string, values:string)_ | PodAnnotations specifies additional annotations for the pod template. |  | Optional: \{\} <br /> |
+
+
+#### K8sExecutionSpec
+
+
+
+K8sExecutionSpec configures the @paperclipai/plugin-kubernetes backend. Each
+field maps to a PAPERCLIP_K8S_* env var read by the server at boot.
+
+
+
+_Appears in:_
+- [ExecutionSpec](#executionspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `backend` _string_ | Backend selects the per-run workload primitive. "job" runs each agent as a<br />fire-and-forget batch/v1 Job (log-scraped output); "sandbox-cr" creates a<br />long-lived agent-sandbox CR (agents.x-k8s.io) that the server execs into.<br />Maps to PAPERCLIP_K8S_BACKEND. | job | Enum: [job sandbox-cr] <br />Optional: \{\} <br /> |
+| `runtimeClassName` _string_ | RuntimeClassName is the RuntimeClass applied to agent pods (e.g. "gvisor")<br />for an extra kernel-isolation boundary. Maps to<br />PAPERCLIP_K8S_RUNTIME_CLASS_NAME. When set, the execution ClusterRole also<br />grants get/use on the named RuntimeClass. |  | Optional: \{\} <br /> |
+| `egressMode` _string_ | EgressMode selects how per-tenant egress is enforced. "standard" uses plain<br />NetworkPolicy (CIDR-only, cannot match FQDNs); "cilium" uses a<br />CiliumNetworkPolicy for exact FQDN allow-listing (requires the Cilium CNI).<br />Maps to PAPERCLIP_K8S_EGRESS_MODE. |  | Enum: [standard cilium] <br />Optional: \{\} <br /> |
+| `egressAllowFQDNs` _string array_ | EgressAllowFQDNs is the list of fully-qualified domain names tenant agent<br />pods may reach (e.g. the LLM gateway and required APIs). Enforced exactly<br />only under EgressMode "cilium". Maps to PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS<br />(comma-separated). |  | Optional: \{\} <br /> |
+| `egressAllowCIDRs` _string array_ | EgressAllowCIDRs is the list of CIDR blocks tenant agent pods may reach, in<br />addition to (or as the standard-mode substitute for) the FQDN allow-list.<br />Maps to PAPERCLIP_K8S_EGRESS_ALLOW_CIDRS (comma-separated). |  | Optional: \{\} <br /> |
+| `namespacePrefix` _string_ | NamespacePrefix is prepended to each derived per-tenant namespace name,<br />letting multiple instances share a cluster without namespace collisions.<br />Maps to PAPERCLIP_K8S_NAMESPACE_PREFIX. |  | Optional: \{\} <br /> |
 
 
 #### LoggingSpec
@@ -843,6 +912,26 @@ _Appears in:_
 | `size` _[Quantity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#quantity-resource-api)_ | Size is the PVC storage size. | 5Gi | Optional: \{\} <br /> |
 | `storageClass` _string_ | StorageClass is the storage class for the PVC. |  | Optional: \{\} <br /> |
 | `accessModes` _[PersistentVolumeAccessMode](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#persistentvolumeaccessmode-v1-core) array_ | AccessModes specifies the PVC access modes. |  | Optional: \{\} <br /> |
+
+
+#### PlatformAdminSpec
+
+
+
+PlatformAdminSpec describes the platform-managed instance-admin seeded into a
+freshly provisioned Paperclip instance for the shared cloud. It maps to the
+PAPERCLIP_SEED_ADMIN_* env vars consumed by the seed-instance-admin CLI.
+
+
+
+_Appears in:_
+- [DeploymentSpec](#deploymentspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `email` _string_ | Email is the platform instance-admin's email address. Required.<br />Wired to PAPERCLIP_SEED_ADMIN_EMAIL. |  |  |
+| `name` _string_ | Name is the optional display name for the platform instance-admin.<br />Wired to PAPERCLIP_SEED_ADMIN_NAME. |  | Optional: \{\} <br /> |
+| `userID` _string_ | UserID is the optional stable user ID to assign to the platform<br />instance-admin (e.g. the Paperclip ID). Wired to PAPERCLIP_SEED_ADMIN_USER_ID. |  | Optional: \{\} <br /> |
 
 
 #### PluginRef
