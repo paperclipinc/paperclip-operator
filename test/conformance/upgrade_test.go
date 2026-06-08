@@ -48,10 +48,14 @@ var _ = Describe("upgrade-path matrix", Ordered, func() {
 		yaml := readFile(filepath.Join("testdata", "minimal.yaml"))
 		out, err := kubectlApply(addNamespace(yaml, ns))
 		Expect(err).ToNot(HaveOccurred(), "apply baseline: %s", out)
-		waitForInstanceReady(suiteCtx, newClient(), ns, instName, 3*time.Minute)
+		waitForInstanceReconciled(suiteCtx, newClient(), ns, instName, 3*time.Minute)
+
+		tag, err := statefulSetImageTag(suiteCtx, newClient(), ns, instName)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(tag).To(Equal("v1.0.0"), "baseline StatefulSet should run the v1.0.0 image tag")
 	})
 
-	It("upgrades the image tag in place and returns to Ready", func() {
+	It("upgrades the image tag in place and rolls the StatefulSet", func() {
 		cl := newClient()
 
 		pvcBefore := captureFingerprint(suiteCtx, cl, ns, instName).PVC
@@ -61,9 +65,15 @@ var _ = Describe("upgrade-path matrix", Ordered, func() {
 		inst.Spec.Image.Tag = "v1.0.1"
 		Expect(cl.Update(suiteCtx, inst)).To(Succeed())
 
-		// Allow the rollout to start, then wait for Ready again.
-		time.Sleep(10 * time.Second)
-		waitForInstanceReady(suiteCtx, cl, ns, instName, 3*time.Minute)
+		// Wait for the operator to observe and apply the new spec generation,
+		// then assert the StatefulSet pod template now references the new tag.
+		// This proves the in-place upgrade rolled the workload without gating on
+		// the (unreachable in kind) app Pod readiness probe.
+		waitForInstanceReconciled(suiteCtx, cl, ns, instName, 3*time.Minute)
+		Eventually(func() (string, error) {
+			return statefulSetImageTag(suiteCtx, newClient(), ns, instName)
+		}, 2*time.Minute, 5*time.Second).Should(Equal("v1.0.1"),
+			"operator did not roll the StatefulSet to the upgraded image tag")
 
 		// PVC identity must be preserved across the upgrade.
 		pvcAfter := captureFingerprint(suiteCtx, cl, ns, instName).PVC

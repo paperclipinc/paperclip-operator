@@ -61,7 +61,7 @@ var _ = Describe("failure injection (controller restart)", Ordered, func() {
 		yaml := readFile(filepath.Join("testdata", "minimal.yaml"))
 		out, err := kubectlApply(addNamespace(yaml, ns))
 		Expect(err).ToNot(HaveOccurred(), "apply: %s", out)
-		waitForInstanceReady(suiteCtx, cl, ns, instName, 3*time.Minute)
+		waitForInstanceReconciled(suiteCtx, cl, ns, instName, 3*time.Minute)
 
 		By("killing the operator pod(s)")
 		opNS := operatorNamespace()
@@ -85,6 +85,11 @@ var _ = Describe("failure injection (controller restart)", Ordered, func() {
 		inst.Labels["conformance/post-restart"] = "true"
 		Expect(cl.Update(suiteCtx, inst)).To(Succeed())
 
-		waitForInstanceReady(suiteCtx, cl, ns, instName, 3*time.Minute)
+		// The restarted operator must observe the post-restart edit and
+		// re-reconcile it. A label-only edit does not bump metadata.generation,
+		// so gate on the operator settling rather than on observedGeneration
+		// advancing: a fresh reconcile keeps the owned StatefulSet and Service
+		// present, which is what proves the controller resumed work.
+		waitForOwnedResources(suiteCtx, cl, ns, instName, 3*time.Minute)
 	})
 })

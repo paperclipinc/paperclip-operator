@@ -140,6 +140,74 @@ func hasReadyTrue(inst *paperclipv1alpha1.Instance) bool {
 	return false
 }
 
+// waitForInstanceReconciled blocks until the operator has observed and settled
+// the instance's CURRENT spec generation, or fails after timeout. "Settled"
+// means status.observedGeneration has caught up to metadata.generation AND the
+// owned StatefulSet and Service exist.
+//
+// This is the correct readiness gate for conformance on a kind cluster. The
+// Instance's aggregate "Ready" condition (status.conditions[Ready]=True) is
+// gated on StatefulSetReady, which in turn requires the workload Pod to report
+// ReadyReplicas > 0 (see reconcileStatefulSet in instance_controller.go). That
+// only happens once the real ghcr.io/paperclipai/paperclip application image is
+// pulled, the Paperclip-specific onboard init container completes, and the HTTP
+// readiness probe passes. None of that is reachable in a lightweight kind
+// fixture: the app image is large/private, the operator hard-codes
+// Paperclip-specific init/main commands (so no generic stub image can satisfy
+// the probes), and there is no real backing database. Gating conformance on the
+// app serving traffic therefore times out deterministically and is what made
+// the Failure modes / GitOps coexistence / Upgrade path jobs fail on every PR.
+//
+// The behaviours these specs actually assert (operator restarts and re-reconciles
+// a spec edit; SSA re-apply does not flap; an image-tag change rolls the
+// StatefulSet) are all about the operator converging desired child objects, not
+// about the app Pod passing its probe. So we gate on the operator having
+// reconciled, mirroring waitForOwnedResources used by the idempotency suite.
+func waitForInstanceReconciled(ctx context.Context, c client.Client, ns, name string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	var last string
+	for time.Now().Before(deadline) {
+		inst := &paperclipv1alpha1.Instance{}
+		if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, inst); err != nil {
+			last = fmt.Sprintf("get instance: %v", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		observed := inst.Status.ObservedGeneration >= inst.Generation
+		sts := &appsv1.StatefulSet{}
+		stsErr := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, sts)
+		svc := &corev1.Service{}
+		svcErr := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, svc)
+		if observed && stsErr == nil && svcErr == nil {
+			return
+		}
+		last = fmt.Sprintf("observedGeneration=%d generation=%d stsErr=%v svcErr=%v",
+			inst.Status.ObservedGeneration, inst.Generation, stsErr, svcErr)
+		time.Sleep(2 * time.Second)
+	}
+	Fail(fmt.Sprintf("Instance %s/%s was not reconciled by the operator within %s (last: %s)", ns, name, timeout, last))
+}
+
+// statefulSetImageTag returns the image tag (the substring after the last ":")
+// of the main app container in the instance's owned StatefulSet. Used by the
+// upgrade-path spec to assert the operator rolled the pod template to the new
+// tag, which is observable without the app Pod ever becoming Ready.
+func statefulSetImageTag(ctx context.Context, c client.Client, ns, name string) (string, error) {
+	sts := &appsv1.StatefulSet{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, sts); err != nil {
+		return "", err
+	}
+	containers := sts.Spec.Template.Spec.Containers
+	if len(containers) == 0 {
+		return "", fmt.Errorf("StatefulSet %s/%s has no containers", ns, name)
+	}
+	img := containers[0].Image
+	if i := strings.LastIndex(img, ":"); i >= 0 {
+		return img[i+1:], nil
+	}
+	return img, nil
+}
+
 func forceRequeue(ctx context.Context, c client.Client, ns, name string) {
 	inst := &paperclipv1alpha1.Instance{}
 	Expect(c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, inst)).To(Succeed())
@@ -155,10 +223,35 @@ type metaTuple struct {
 	ResourceVersion string
 }
 
+// pvcFingerprint captures only the stable, operator-owned identity of the app
+// PVC. We deliberately do NOT include resourceVersion here. The operator
+// reconciles the PVC create-only (reconcilePVC in instance_controller.go does a
+// Get and, when found, returns without ever writing it again), so it can never
+// be the source of PVC churn. On a kind cluster the PVC's storageclass uses
+// volumeBindingMode: WaitForFirstConsumer, so the moment the workload Pod is
+// scheduled the local-path provisioner and the Kubernetes PV binding controller
+// patch the PVC out-of-band: they add the volume.kubernetes.io/selected-node and
+// pv.kubernetes.io/bind-completed annotations, set spec.volumeName, and flip
+// status.phase Pending -> Bound. Each of those writes bumps metadata.resourceVersion
+// even though nothing the operator manages changed. Including resourceVersion in
+// the fingerprint therefore reported a phantom "idempotency broken" failure for a
+// purely external, no-op-for-the-operator mutation.
+//
+// metadata.generation only advances on a spec change, so it is a faithful
+// idempotency signal: if the operator re-applied the PVC spec on every reconcile
+// it would bump generation and this check would (correctly) fail. We additionally
+// pin the requested storage size and access modes to catch any spec rewrite that
+// somehow preserved generation.
+type pvcFingerprint struct {
+	Generation  int64
+	StorageReq  string
+	AccessModes string
+}
+
 type resourceFingerprint struct {
 	StatefulSet metaTuple
 	Service     metaTuple
-	PVC         metaTuple
+	PVC         pvcFingerprint
 }
 
 func captureFingerprint(ctx context.Context, c client.Client, ns, name string) resourceFingerprint {
@@ -173,7 +266,16 @@ func captureFingerprint(ctx context.Context, c client.Client, ns, name string) r
 	}
 	pvc := &corev1.PersistentVolumeClaim{}
 	if err := c.Get(ctx, types.NamespacedName{Namespace: ns, Name: name + "-data"}, pvc); err == nil {
-		fp.PVC = metaTuple{pvc.Generation, pvc.ResourceVersion}
+		req := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+		modes := make([]string, 0, len(pvc.Spec.AccessModes))
+		for _, m := range pvc.Spec.AccessModes {
+			modes = append(modes, string(m))
+		}
+		fp.PVC = pvcFingerprint{
+			Generation:  pvc.Generation,
+			StorageReq:  req.String(),
+			AccessModes: strings.Join(modes, ","),
+		}
 	}
 	return fp
 }
@@ -187,7 +289,17 @@ func expectFingerprintUnchanged(before, after resourceFingerprint) {
 	}
 	check("StatefulSet", before.StatefulSet, after.StatefulSet)
 	check("Service", before.Service, after.Service)
-	check("PVC", before.PVC, after.PVC)
+
+	// PVC: compare stable spec only. resourceVersion is intentionally excluded
+	// (see pvcFingerprint doc) because external storage controllers churn it on
+	// kind while the operator only ever creates the PVC once.
+	Expect(after.PVC.Generation).To(Equal(before.PVC.Generation),
+		fmt.Sprintf("PVC.metadata.generation changed: %d -> %d (operator re-applied the PVC spec; idempotency broken)",
+			before.PVC.Generation, after.PVC.Generation))
+	Expect(after.PVC.StorageReq).To(Equal(before.PVC.StorageReq),
+		fmt.Sprintf("PVC requested storage changed: %s -> %s (idempotency broken)", before.PVC.StorageReq, after.PVC.StorageReq))
+	Expect(after.PVC.AccessModes).To(Equal(before.PVC.AccessModes),
+		fmt.Sprintf("PVC access modes changed: %s -> %s (idempotency broken)", before.PVC.AccessModes, after.PVC.AccessModes))
 }
 
 func readFile(path string) string {
@@ -258,6 +370,8 @@ var (
 	_ = IsNotFoundError
 	_ = readFile
 	_ = waitForInstanceReady
+	_ = waitForInstanceReconciled
+	_ = statefulSetImageTag
 	_ = waitForOwnedResources
 	_ = forceRequeue
 	_ = freshNamespace
