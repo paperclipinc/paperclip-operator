@@ -387,6 +387,63 @@ spec:
                         - any
                         type: string
                     type: object
+                  registry:
+                    description: |-
+                      Registry declaratively defines which agent harnesses ("adapters") this
+                      instance offers and how each is wired. Marshaled to the PAPERCLIP_ADAPTERS
+                      env var consumed by the server's adapter-registry bootstrap. When empty,
+                      the server uses its built-in defaults (no PAPERCLIP_ADAPTERS emitted).
+                    items:
+                      description: |-
+                        AdapterRegistryEntry is one declarative agent-harness entry. Mirrors the
+                        server's shared AdapterRegistryEntry shape (packages/shared) and the plugin's
+                        local copy. Runtime fields are honored only for sandboxed (Kubernetes)
+                        execution. Keep the json tags in sync with the server zod schema.
+                      properties:
+                        adapterType:
+                          description: AdapterType is the harness identifier, e.g.
+                            "opencode_local".
+                          minLength: 1
+                          type: string
+                        allowFqdns:
+                          description: AllowFQDNs is the egress FQDN allow-list for
+                            the agent pod (k8s only).
+                          items:
+                            type: string
+                          type: array
+                        defaultEnv:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            DefaultEnv are NON-SECRET env defaults injected as the base layer for the
+                            agent Job (process-env secrets override them), e.g. ANTHROPIC_BASE_URL set
+                            to the in-cluster inference gateway. Never put secrets here.
+                          type: object
+                        enabled:
+                          description: Enabled controls availability in the agent-creation
+                            picker. Defaults true.
+                          type: boolean
+                        envKeys:
+                          description: |-
+                            EnvKeys are process-env keys forwarded into the agent Job (k8s only),
+                            e.g. ANTHROPIC_API_KEY.
+                          items:
+                            type: string
+                          type: array
+                        probeCommand:
+                          description: ProbeCommand is the adapter liveness/probe
+                            command (k8s only).
+                          items:
+                            type: string
+                          type: array
+                        runtimeImage:
+                          description: RuntimeImage is the container image the agent
+                            Job/Sandbox runs (k8s only).
+                          type: string
+                      required:
+                      - adapterType
+                      type: object
+                    type: array
                 type: object
               auth:
                 description: Auth configures authentication settings.
