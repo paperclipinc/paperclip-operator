@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.14.0...v0.15.0) (2026-06-08)
+
+
+### Features
+
+* spec.adapters.registry -&gt; PAPERCLIP_ADAPTERS ([#79](https://github.com/paperclipinc/paperclip-operator/issues/79)) ([b8b96de](https://github.com/paperclipinc/paperclip-operator/commit/b8b96de0108c1ac6d1aedeed54ac6589a82c32ca))
+
 ## [0.14.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.13.0...v0.14.0) (2026-06-05)
 
 
