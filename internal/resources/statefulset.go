@@ -434,6 +434,10 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 	// In-cluster Kubernetes execution policy (@paperclipai/plugin-kubernetes)
 	vars = append(vars, buildExecutionEnvVars(instance)...)
 
+	// Declarative adapter registry (PAPERCLIP_ADAPTERS) consumed by the server's
+	// adapter-registry bootstrap (picker availability + k8s runtime wiring).
+	vars = append(vars, buildAdapterRegistryEnvVars(instance)...)
+
 	// OAuth connections
 	if instance.Spec.Connections != nil {
 		conn := instance.Spec.Connections
@@ -761,6 +765,23 @@ func buildExecutionEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar
 	}
 
 	return vars
+}
+
+// buildAdapterRegistryEnvVars marshals spec.adapters.registry into the
+// PAPERCLIP_ADAPTERS env var. Emits nothing when the registry is empty so
+// unconfigured instances keep their built-in adapter defaults.
+func buildAdapterRegistryEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
+	registry := instance.Spec.Adapters.Registry
+	if len(registry) == 0 {
+		return nil
+	}
+	encoded, err := json.Marshal(registry)
+	if err != nil {
+		// Marshaling typed structs cannot fail in practice; emit nothing rather
+		// than produce a malformed env var that would fail the server bootstrap.
+		return nil
+	}
+	return []corev1.EnvVar{{Name: "PAPERCLIP_ADAPTERS", Value: string(encoded)}}
 }
 
 func buildVolumes(instance *paperclipv1alpha1.Instance) []corev1.Volume {

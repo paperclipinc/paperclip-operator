@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -1645,5 +1646,43 @@ func TestBuildExecutionClusterRoleBinding(t *testing.T) {
 		binding.Subjects[0].Name != ServiceAccountName(instance) ||
 		binding.Subjects[0].Namespace != instance.Namespace {
 		t.Errorf("expected binding subject to be the app SA, got %+v", binding.Subjects)
+	}
+}
+
+func TestBuildAdapterRegistryEnvVar(t *testing.T) {
+	enabled := true
+	instance := newTestInstance("adapters")
+	instance.Spec.Adapters.Registry = []paperclipv1alpha1.AdapterRegistryEntry{
+		{
+			AdapterType:  "opencode_local",
+			Enabled:      &enabled,
+			RuntimeImage: "ghcr.io/paperclipai/agent-runtime-opencode:v1",
+			EnvKeys:      []string{"ANTHROPIC_API_KEY"},
+			AllowFQDNs:   []string{},
+			ProbeCommand: []string{"opencode", "--version"},
+			DefaultEnv:   map[string]string{"ANTHROPIC_BASE_URL": "http://bifrost.bifrost.svc.cluster.local:8080"},
+		},
+	}
+
+	env := containerEnv(instance)
+	val, ok := envValue(env, "PAPERCLIP_ADAPTERS")
+	if !ok {
+		t.Fatal("expected PAPERCLIP_ADAPTERS to be set")
+	}
+
+	var decoded []map[string]any
+	if err := json.Unmarshal([]byte(val), &decoded); err != nil {
+		t.Fatalf("PAPERCLIP_ADAPTERS is not valid JSON: %v", err)
+	}
+	if len(decoded) != 1 || decoded[0]["adapterType"] != "opencode_local" {
+		t.Fatalf("unexpected decoded registry: %#v", decoded)
+	}
+}
+
+func TestBuildAdapterRegistryEnvVarOmittedWhenEmpty(t *testing.T) {
+	instance := newTestInstance("no-adapters")
+	env := containerEnv(instance)
+	if _, ok := envValue(env, "PAPERCLIP_ADAPTERS"); ok {
+		t.Fatal("PAPERCLIP_ADAPTERS should not be set when registry is empty")
 	}
 }
