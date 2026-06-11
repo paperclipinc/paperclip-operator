@@ -468,6 +468,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled controls whether the heartbeat scheduler runs. Defaults to true. | true | Optional: \{\} <br /> |
 | `intervalMS` _integer_ | IntervalMS sets the heartbeat interval in milliseconds. | 60000 | Optional: \{\} <br /> |
+| `schedulerGating` _string_ | SchedulerGating selects how the heartbeat scheduler is pinned to a single<br />replica when replicas > 1.<br /> - "ordinal" (default): a shell wrapper enables the scheduler only on the<br />   StatefulSet's ordinal-0 pod. Works with every app version, but has no<br />   failover and requires the StatefulSet workload.<br /> - "lease": no env manipulation - every replica participates in the app's<br />   lease-based leader election with automatic failover. Requires an app<br />   version with scheduler leases.<br /> - "auto": currently behaves like "ordinal"; will default to "lease" once<br />   the minimum supported app version includes lease leadership. | ordinal | Enum: [ordinal lease auto] <br />Optional: \{\} <br /> |
 
 
 #### ImageSpec

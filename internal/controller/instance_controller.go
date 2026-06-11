@@ -71,6 +71,12 @@ const (
 	// storage) are satisfied. Advisory: it does not gate the Ready aggregate
 	// and is removed entirely while replicas <= 1.
 	ConditionMultiReplicaPreconditions = "MultiReplicaPreconditions"
+	// ConditionSchedulerGatingValid indicates whether the resolved heartbeat
+	// scheduler gating mode is compatible with the server workload at
+	// replicas > 1 (ordinal gating needs StatefulSet ordinals). Advisory: it
+	// does not gate the Ready aggregate and is removed entirely while
+	// replicas <= 1.
+	ConditionSchedulerGatingValid = "SchedulerGatingValid"
 	// ConditionServiceReady indicates the Service is ready.
 	ConditionServiceReady = "ServiceReady"
 	// ConditionNetworkPolicyReady indicates the NetworkPolicy is reconciled.
@@ -289,6 +295,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// 3.8. Advisory multi-replica warnings (conditions/events only, never fatal)
 	r.reconcileMultiReplicaPreconditions(instance)
+	r.reconcileSchedulerGatingValidity(instance)
 	r.warnPDBDrainSafety(instance)
 
 	// 4. Server workload (StatefulSet or Deployment, per spec.workload)
@@ -908,6 +915,48 @@ func (r *InstanceReconciler) reconcileMultiReplicaPreconditions(instance *paperc
 	}
 }
 
+// reconcileSchedulerGatingValidity maintains the advisory SchedulerGatingValid
+// condition. Ordinal gating pins the heartbeat scheduler to the StatefulSet's
+// ordinal-0 pod via a shell wrapper; Deployment pods have no stable ordinals,
+// so the wrapper cannot be applied and every replica runs the scheduler.
+// While replicas <= 1 the condition is removed entirely so single-replica
+// instances carry no stale noise.
+func (r *InstanceReconciler) reconcileSchedulerGatingValidity(instance *paperclipv1alpha1.Instance) {
+	replicas := resources.EffectiveReplicas(instance)
+	if replicas <= 1 {
+		meta.RemoveStatusCondition(&instance.Status.Conditions, ConditionSchedulerGatingValid)
+		return
+	}
+
+	if resources.EffectiveWorkloadIsDeployment(instance) && resources.SchedulerGatingMode(instance) == "ordinal" {
+		message := fmt.Sprintf("spec.heartbeat.schedulerGating resolves to ordinal but the server workload is a "+
+			"Deployment with %d replicas: Deployment pods have no stable ordinals, so the ordinal-0 shell wrapper "+
+			"is not applied. Set spec.heartbeat.schedulerGating=lease (requires an app version with lease-based "+
+			"scheduler leadership) - until then every replica runs the heartbeat scheduler.", replicas)
+		changed := meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionSchedulerGatingValid,
+			Status:             metav1.ConditionFalse,
+			Reason:             "OrdinalGatingRequiresStatefulSet",
+			Message:            message,
+			ObservedGeneration: instance.Generation,
+		})
+		// SetStatusCondition reports a change only when status/reason/message
+		// transition, so the Warning fires once per transition, not per reconcile.
+		if changed && r.Recorder != nil {
+			r.Recorder.Event(instance, corev1.EventTypeWarning, "OrdinalGatingRequiresStatefulSet", message)
+		}
+		return
+	}
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionSchedulerGatingValid,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SchedulerGatingValid",
+		Message:            fmt.Sprintf("Scheduler gating mode %q is compatible with the server workload", resources.SchedulerGatingMode(instance)),
+		ObservedGeneration: instance.Generation,
+	})
+}
+
 // warnPDBDrainSafety emits an advisory event when the PDB floor meets or
 // exceeds the autoscaler floor: at minimum scale every pod is then required
 // by the PDB, disruptionsAllowed is 0, and node drains stall. Event only, no
@@ -1484,7 +1533,8 @@ func allSubConditionsReady(conditions []metav1.Condition) bool {
 		}
 		// Advisory conditions warn about spec combinations; they must not gate
 		// readiness of the managed resources themselves.
-		if cond.Type == ConditionWorkloadProfileValid || cond.Type == ConditionMultiReplicaPreconditions {
+		if cond.Type == ConditionWorkloadProfileValid || cond.Type == ConditionMultiReplicaPreconditions ||
+			cond.Type == ConditionSchedulerGatingValid {
 			continue
 		}
 		if cond.Status != metav1.ConditionTrue {

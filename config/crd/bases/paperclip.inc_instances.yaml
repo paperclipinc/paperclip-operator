@@ -4142,6 +4142,24 @@ spec:
                     description: IntervalMS sets the heartbeat interval in milliseconds.
                     format: int32
                     type: integer
+                  schedulerGating:
+                    default: ordinal
+                    description: |-
+                      SchedulerGating selects how the heartbeat scheduler is pinned to a single
+                      replica when replicas > 1.
+                       - "ordinal" (default): a shell wrapper enables the scheduler only on the
+                         StatefulSet's ordinal-0 pod. Works with every app version, but has no
+                         failover and requires the StatefulSet workload.
+                       - "lease": no env manipulation - every replica participates in the app's
+                         lease-based leader election with automatic failover. Requires an app
+                         version with scheduler leases.
+                       - "auto": currently behaves like "ordinal"; will default to "lease" once
+                         the minimum supported app version includes lease leadership.
+                    enum:
+                    - ordinal
+                    - lease
+                    - auto
+                    type: string
                 type: object
               image:
                 description: Image specifies the Paperclip container image to deploy.

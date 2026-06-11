@@ -515,6 +515,21 @@ type HeartbeatSpec struct {
 	// +kubebuilder:default=60000
 	// +optional
 	IntervalMS int32 `json:"intervalMS,omitempty"`
+
+	// SchedulerGating selects how the heartbeat scheduler is pinned to a single
+	// replica when replicas > 1.
+	//  - "ordinal" (default): a shell wrapper enables the scheduler only on the
+	//    StatefulSet's ordinal-0 pod. Works with every app version, but has no
+	//    failover and requires the StatefulSet workload.
+	//  - "lease": no env manipulation - every replica participates in the app's
+	//    lease-based leader election with automatic failover. Requires an app
+	//    version with scheduler leases.
+	//  - "auto": currently behaves like "ordinal"; will default to "lease" once
+	//    the minimum supported app version includes lease leadership.
+	// +kubebuilder:validation:Enum=ordinal;lease;auto
+	// +kubebuilder:default=ordinal
+	// +optional
+	SchedulerGating string `json:"schedulerGating,omitempty"`
 }
 
 // AdaptersSpec configures agent runtime adapters.

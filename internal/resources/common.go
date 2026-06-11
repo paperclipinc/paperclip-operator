@@ -105,6 +105,18 @@ func PersistenceEnabled(instance *paperclipv1alpha1.Instance) bool {
 	return *instance.Spec.Storage.Persistence.Enabled
 }
 
+// SchedulerGatingMode resolves spec.heartbeat.schedulerGating to the mode the
+// operator actually applies: "ordinal" or "lease". "auto" currently resolves
+// to "ordinal" (it will flip to "lease" once the minimum supported app version
+// includes lease-based scheduler leadership), and an empty value defaults to
+// "ordinal".
+func SchedulerGatingMode(instance *paperclipv1alpha1.Instance) string {
+	if instance.Spec.Heartbeat.SchedulerGating == "lease" {
+		return "lease"
+	}
+	return "ordinal"
+}
+
 // EffectiveWorkloadIsDeployment reports whether the server workload the
 // controller actually reconciles is a Deployment. It applies the PVC-safety
 // override on top of UseDeploymentWorkload: an explicit spec.workload=
