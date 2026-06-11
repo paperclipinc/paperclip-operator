@@ -90,10 +90,29 @@ func UseDeploymentWorkload(instance *paperclipv1alpha1.Instance) bool {
 	case "Deployment":
 		return true
 	case "auto":
-		return !instance.Spec.Storage.Persistence.Enabled && instance.Spec.Database.Mode != "embedded"
+		return !PersistenceEnabled(instance) && instance.Spec.Database.Mode != "embedded"
 	default:
 		return false
 	}
+}
+
+// PersistenceEnabled reports whether the data PVC is enabled (defaults to
+// true when unset).
+func PersistenceEnabled(instance *paperclipv1alpha1.Instance) bool {
+	if instance.Spec.Storage.Persistence.Enabled == nil {
+		return true
+	}
+	return *instance.Spec.Storage.Persistence.Enabled
+}
+
+// EffectiveWorkloadIsDeployment reports whether the server workload the
+// controller actually reconciles is a Deployment. It applies the PVC-safety
+// override on top of UseDeploymentWorkload: an explicit spec.workload=
+// Deployment with persistence enabled falls back to a StatefulSet (the
+// ReadWriteOnce data PVC cannot be shared by surging Deployment pods), and the
+// HPA scaleTargetRef must follow that fallback.
+func EffectiveWorkloadIsDeployment(instance *paperclipv1alpha1.Instance) bool {
+	return UseDeploymentWorkload(instance) && !PersistenceEnabled(instance)
 }
 
 // UseTCPProbes returns true when probes should use TCP instead of HTTP.

@@ -34,7 +34,7 @@ func newTestInstance(name string) *paperclipv1alpha1.Instance {
 			},
 			Storage: paperclipv1alpha1.StorageSpec{
 				Persistence: paperclipv1alpha1.PersistenceSpec{
-					Enabled: true,
+					Enabled: Ptr(true),
 					Size:    resource.MustParse("5Gi"),
 				},
 			},

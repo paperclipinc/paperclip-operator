@@ -14,7 +14,7 @@ import (
 func statelessTestInstance() *paperclipv1alpha1.Instance {
 	instance := newTestInstance("my-paperclip")
 	instance.Spec.Workload = "Deployment"
-	instance.Spec.Storage.Persistence.Enabled = false
+	instance.Spec.Storage.Persistence.Enabled = Ptr(false)
 	instance.Spec.Database.Mode = "external"
 	instance.Spec.Database.ExternalURL = "postgresql://user:pass@db.example.com:5432/paperclip"
 	return instance
@@ -114,6 +114,69 @@ func TestBuildDeploymentSuspendedReplicas(t *testing.T) {
 	}
 }
 
+func TestEffectiveWorkloadIsDeployment(t *testing.T) {
+	tests := []struct {
+		name        string
+		workload    string
+		persistence bool
+		want        bool
+	}{
+		{"explicit Deployment", "Deployment", false, true},
+		{"explicit Deployment with persistence falls back to StatefulSet", "Deployment", true, false},
+		{"explicit StatefulSet", "StatefulSet", false, false},
+		{"auto without persistence", "auto", false, true},
+		{"auto with persistence", "auto", true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instance := newTestInstance("workload")
+			instance.Spec.Workload = tt.workload
+			instance.Spec.Storage.Persistence.Enabled = Ptr(tt.persistence)
+			instance.Spec.Database.Mode = "external"
+			if got := EffectiveWorkloadIsDeployment(instance); got != tt.want {
+				t.Errorf("EffectiveWorkloadIsDeployment(workload=%q, persistence=%t) = %t, want %t",
+					tt.workload, tt.persistence, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildHorizontalPodAutoscalerTargetFollowsWorkloadKind(t *testing.T) {
+	tests := []struct {
+		name        string
+		workload    string
+		persistence bool
+		wantKind    string
+	}{
+		{"StatefulSet workload", "StatefulSet", true, "StatefulSet"},
+		{"Deployment workload", "Deployment", false, "Deployment"},
+		{"Deployment workload with persistence (PVC-safety fallback)", "Deployment", true, "StatefulSet"},
+		{"auto stateless", "auto", false, "Deployment"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instance := newTestInstance("hpa-target")
+			instance.Spec.Workload = tt.workload
+			instance.Spec.Storage.Persistence.Enabled = Ptr(tt.persistence)
+			instance.Spec.Database.Mode = "external"
+			instance.Spec.Availability.AutoScaling = &paperclipv1alpha1.AutoScalingSpec{Enabled: true}
+
+			hpa := BuildHorizontalPodAutoscaler(instance)
+			if hpa == nil {
+				t.Fatal("expected an HPA")
+			}
+			if hpa.Spec.ScaleTargetRef.Kind != tt.wantKind {
+				t.Errorf("expected scaleTargetRef kind %q, got %q", tt.wantKind, hpa.Spec.ScaleTargetRef.Kind)
+			}
+			if hpa.Spec.ScaleTargetRef.Name != "hpa-target" {
+				t.Errorf("expected scaleTargetRef name 'hpa-target', got %q", hpa.Spec.ScaleTargetRef.Name)
+			}
+		})
+	}
+}
+
 func TestUseDeploymentWorkload(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -138,7 +201,7 @@ func TestUseDeploymentWorkload(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			instance := newTestInstance("workload")
 			instance.Spec.Workload = tt.workload
-			instance.Spec.Storage.Persistence.Enabled = tt.persistence
+			instance.Spec.Storage.Persistence.Enabled = Ptr(tt.persistence)
 			instance.Spec.Database.Mode = tt.dbMode
 			if got := UseDeploymentWorkload(instance); got != tt.want {
 				t.Errorf("UseDeploymentWorkload(workload=%q, persistence=%t, dbMode=%q) = %t, want %t",

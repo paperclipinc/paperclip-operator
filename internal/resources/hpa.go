@@ -52,13 +52,22 @@ func BuildHorizontalPodAutoscaler(instance *paperclipv1alpha1.Instance) *autosca
 		})
 	}
 
+	// The scaleTargetRef follows the active server workload kind (the
+	// StatefulSet and Deployment names are identical by construction).
+	targetKind := "StatefulSet"
+	targetName := StatefulSetName(instance)
+	if EffectiveWorkloadIsDeployment(instance) {
+		targetKind = "Deployment"
+		targetName = DeploymentName(instance)
+	}
+
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{
 		ObjectMeta: ObjectMeta(instance, HPAName(instance)),
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
 				APIVersion: "apps/v1",
-				Kind:       "StatefulSet",
-				Name:       StatefulSetName(instance),
+				Kind:       targetKind,
+				Name:       targetName,
 			},
 			MinReplicas: &minReplicas,
 			MaxReplicas: maxReplicas,

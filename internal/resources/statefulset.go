@@ -659,7 +659,7 @@ func buildAdapterRegistryEnvVars(instance *paperclipv1alpha1.Instance) []corev1.
 func buildVolumes(instance *paperclipv1alpha1.Instance) []corev1.Volume {
 	var volumes []corev1.Volume
 
-	if instance.Spec.Storage.Persistence.Enabled {
+	if PersistenceEnabled(instance) {
 		volumes = append(volumes, corev1.Volume{
 			Name: DataVolumeName,
 			VolumeSource: corev1.VolumeSource{

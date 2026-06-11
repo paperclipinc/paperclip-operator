@@ -459,10 +459,14 @@ type StorageSpec struct {
 
 // PersistenceSpec configures PVC settings.
 type PersistenceSpec struct {
+	// A pointer is required for round-tripping: with a plain bool plus
+	// omitempty, enabled=false is dropped on marshal and the API server
+	// re-defaults it to true on every controller update of the CR.
+
 	// Enabled controls whether a PVC is created. Defaults to true.
 	// +kubebuilder:default=true
 	// +optional
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
 
 	// Size is the PVC storage size.
 	// +kubebuilder:default="5Gi"
