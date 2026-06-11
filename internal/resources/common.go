@@ -82,6 +82,20 @@ func WorkloadReplicas(instance *paperclipv1alpha1.Instance) int32 {
 	return EffectiveReplicas(instance)
 }
 
+// UseDeploymentWorkload returns true when the server should run as a
+// Deployment: explicit spec.workload=Deployment, or auto with no
+// persistence and a non-embedded database.
+func UseDeploymentWorkload(instance *paperclipv1alpha1.Instance) bool {
+	switch instance.Spec.Workload {
+	case "Deployment":
+		return true
+	case "auto":
+		return !instance.Spec.Storage.Persistence.Enabled && instance.Spec.Database.Mode != "embedded"
+	default:
+		return false
+	}
+}
+
 // UseTCPProbes returns true when probes should use TCP instead of HTTP.
 // This is needed in authenticated mode where /api/health returns 403.
 func UseTCPProbes(instance *paperclipv1alpha1.Instance) bool {
@@ -144,6 +158,13 @@ func ObjectMeta(instance *paperclipv1alpha1.Instance, name string) metav1.Object
 
 // StatefulSetName returns the StatefulSet name for a Instance.
 func StatefulSetName(instance *paperclipv1alpha1.Instance) string {
+	return instance.Name
+}
+
+// DeploymentName returns the Deployment name for a Instance. It must equal
+// StatefulSetName so the server workload keeps its name (and the Service its
+// label-based selection) when switching workload kinds.
+func DeploymentName(instance *paperclipv1alpha1.Instance) string {
 	return instance.Name
 }
 
