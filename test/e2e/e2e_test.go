@@ -22,6 +22,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -412,7 +414,224 @@ spec:
 			}, 3*time.Minute, 5*time.Second).Should(Succeed())
 		})
 	})
+
+	// Scheduler lease failover exercises lease-based scheduler gating across
+	// two Deployment replicas: exactly one pod is elected scheduler leader and
+	// surfaced via the role label and status.schedulerLeader, and deleting the
+	// leader hands the lease to the surviving replica.
+	//
+	// The scenario needs an app image that ships lease-based scheduler
+	// leadership (paperclipai/paperclip#7995, unreleased at the time of
+	// writing), so it is gated behind PAPERCLIP_E2E_LEASE_IMAGE and SKIPPED by
+	// default:
+	//
+	//	PAPERCLIP_E2E_LEASE_IMAGE=ghcr.io/paperclipai/paperclip:sha-<lease> make test-e2e
+	Context("Scheduler lease failover", func() {
+		const leaseNS = "paperclip-e2e-lease"
+		const instName = "e2e-lease"
+		const pgName = "e2e-lease-pg"
+
+		leaseImage := os.Getenv("PAPERCLIP_E2E_LEASE_IMAGE")
+
+		BeforeAll(func() {
+			if leaseImage == "" {
+				Skip("PAPERCLIP_E2E_LEASE_IMAGE not set - lease failover e2e requires an app image " +
+					"with scheduler leases (paperclip#7995)")
+			}
+
+			// Best effort: the operator-provided image may be local-only (pull
+			// fails) or remote-only (kind load of a missing local image fails);
+			// either way the cluster can still end up able to run it.
+			By("loading the lease-capable app image into kind (best effort)")
+			if _, err := utils.Run(exec.Command("docker", "pull", leaseImage)); err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "docker pull %s failed (continuing): %v\n", leaseImage, err)
+			}
+			if err := utils.LoadImageToKindClusterWithName(leaseImage); err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "kind load %s failed (continuing): %v\n", leaseImage, err)
+			}
+
+			By("creating the lease test namespace (unrestricted so the postgres image may run)")
+			_, _ = utils.Run(exec.Command("kubectl", "create", "ns", leaseNS))
+
+			By("deploying an in-cluster PostgreSQL for database.mode=external")
+			applyManifest(fmt.Sprintf(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: %[2]s, namespace: %[1]s}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: %[2]s}}
+  template:
+    metadata: {labels: {app: %[2]s}}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - {name: POSTGRES_USER, value: paperclip}
+            - {name: POSTGRES_PASSWORD, value: paperclip}
+            - {name: POSTGRES_DB, value: paperclip}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: [pg_isready, -U, paperclip]}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata: {name: %[2]s, namespace: %[1]s}
+spec:
+  selector: {app: %[2]s}
+  ports: [{port: 5432, targetPort: 5432}]
+`, leaseNS, pgName))
+			Eventually(deploymentReady(leaseNS, pgName, 1), 5*time.Minute, 10*time.Second).Should(Succeed())
+		})
+
+		AfterEach(func() {
+			if !CurrentSpecReport().Failed() {
+				return
+			}
+			for _, args := range [][]string{
+				{"get", "all,instance", "-n", leaseNS, "-o", "wide"},
+				{"describe", "instance", instName, "-n", leaseNS},
+				{"get", "pods", "-n", leaseNS, "--show-labels"},
+				{"describe", "pods", "-n", leaseNS},
+				{"get", "events", "-n", leaseNS, "--sort-by=.lastTimestamp"},
+			} {
+				out, _ := utils.Run(exec.Command("kubectl", args...))
+				_, _ = fmt.Fprintf(GinkgoWriter, "\n$ kubectl %v\n%s\n", args, out)
+			}
+			out, _ := utils.Run(exec.Command("kubectl", "logs", "-l",
+				"app.kubernetes.io/instance="+instName, "-n", leaseNS,
+				"--all-containers", "--tail=80", "--prefix"))
+			_, _ = fmt.Fprintf(GinkgoWriter, "\n$ kubectl logs -l app.kubernetes.io/instance=%s\n%s\n", instName, out)
+		})
+
+		AfterAll(func() {
+			if leaseImage == "" {
+				return
+			}
+			// Delete the Instance while the operator still runs so its
+			// finalizer clears (see the Instance lifecycle AfterAll).
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "instance", "--all",
+				"-n", leaseNS, "--ignore-not-found", "--timeout=180s"))
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "ns", leaseNS, "--wait=false"))
+		})
+
+		It("fails the scheduler lease over to a surviving replica when the leader pod dies", func() {
+			By("applying the external-DB secret and a 2-replica lease-gated Instance")
+			// objectStorage is intentionally omitted: MultiReplicaPreconditions
+			// reports False (S3 is required for shared file state across real
+			// multi-replica deployments), but the condition is advisory and the
+			// workload reconciles regardless. The failover assertions below do
+			// not touch file state, so a warning condition is acceptable here
+			// and keeps the scenario free of a MinIO dependency.
+			applyManifest(fmt.Sprintf(`
+apiVersion: v1
+kind: Secret
+metadata: {name: e2e-lease-db, namespace: %[1]s}
+stringData:
+  DATABASE_URL: postgresql://paperclip:paperclip@%[3]s.%[1]s.svc.cluster.local:5432/paperclip
+---
+apiVersion: paperclip.inc/v1alpha1
+kind: Instance
+metadata: {name: %[2]s, namespace: %[1]s}
+spec:
+  image: {%[4]s}
+  workload: Deployment
+  deployment: {mode: local_trusted, exposure: private}
+  database:
+    mode: external
+    externalURLSecretRef: {name: e2e-lease-db, key: DATABASE_URL}
+  heartbeat: {enabled: true, schedulerGating: lease}
+  availability: {replicas: 2}
+  storage: {persistence: {enabled: false}}
+`, leaseNS, instName, pgName, imageSpecYAML(leaseImage)))
+
+			By("waiting for the server Deployment to have 2 ready replicas")
+			Eventually(deploymentReady(leaseNS, instName, 2), 8*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("waiting for exactly one pod to be labeled " + schedulerRoleSelector)
+			var leader string
+			Eventually(func(g Gomega) {
+				leaders := schedulerLabeledPods(leaseNS, instName)
+				g.Expect(leaders).To(HaveLen(1), "expected exactly one scheduler-labeled pod, got %v", leaders)
+				leader = leaders[0]
+			}, 5*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("asserting status.schedulerLeader matches the labeled pod")
+			Eventually(func(g Gomega) {
+				g.Expect(schedulerLeaderStatus(leaseNS, instName)).To(Equal(leader))
+			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("deleting the leader pod " + leader)
+			_, err := utils.Run(exec.Command("kubectl", "delete", "pod", leader, "-n", leaseNS, "--wait=false"))
+			Expect(err).NotTo(HaveOccurred(), "Failed to delete the leader pod")
+
+			// The app's lease TTL plus the operator's 30s visibility poll keep
+			// real failover well under 90s; the Eventually budget is padded for
+			// CI (replacement pod scheduling + image start time).
+			By("waiting for a NEW leader pod to be labeled and recorded in status")
+			Eventually(func(g Gomega) {
+				leaders := schedulerLabeledPods(leaseNS, instName)
+				g.Expect(leaders).To(HaveLen(1), "expected exactly one scheduler-labeled pod, got %v", leaders)
+				g.Expect(leaders[0]).NotTo(Equal(leader), "the scheduler lease should fail over to a different pod")
+				g.Expect(schedulerLeaderStatus(leaseNS, instName)).To(Equal(leaders[0]))
+			}, 3*time.Minute, 5*time.Second).Should(Succeed())
+		})
+	})
 })
+
+// schedulerRoleSelector selects server pods currently labeled as the
+// scheduler lease holder by the operator's leader-visibility loop.
+const schedulerRoleSelector = "paperclip.inc/role=scheduler"
+
+// deploymentReady returns a Gomega assertion that the named Deployment has
+// exactly the wanted number of ready replicas.
+func deploymentReady(ns, name string, want int) func(Gomega) {
+	return func(g Gomega) {
+		out, err := utils.Run(exec.Command("kubectl", "get", "deployment", name, "-n", ns,
+			"-o", "jsonpath={.status.readyReplicas}"))
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(out).To(Equal(strconv.Itoa(want)), "Deployment %s does not have %d ready replicas yet", name, want)
+	}
+}
+
+// schedulerLabeledPods returns the non-terminating server pods of the given
+// instance that carry the scheduler role label. Terminating pods are excluded
+// so a just-deleted leader does not count against the "exactly one leader"
+// assertions while it drains.
+func schedulerLabeledPods(ns, instName string) []string {
+	out, _ := utils.Run(exec.Command("kubectl", "get", "pods",
+		"-l", fmt.Sprintf("app.kubernetes.io/instance=%s,app.kubernetes.io/component=server,%s",
+			instName, schedulerRoleSelector),
+		"-n", ns,
+		"-o", "go-template={{ range .items }}"+
+			"{{ if not .metadata.deletionTimestamp }}"+
+			"{{ .metadata.name }}"+
+			"{{ \"\\n\" }}{{ end }}{{ end }}"))
+	return utils.GetNonEmptyLines(out)
+}
+
+// schedulerLeaderStatus returns the instance's status.schedulerLeader field.
+func schedulerLeaderStatus(ns, instName string) string {
+	out, _ := utils.Run(exec.Command("kubectl", "get", "instance", instName, "-n", ns,
+		"-o", "jsonpath={.status.schedulerLeader}"))
+	return strings.TrimSpace(out)
+}
+
+// imageSpecYAML renders the inline spec.image block for a full image
+// reference: the Instance API has no combined-reference field, so repo:tag and
+// repo@sha256:... forms are split into their respective fields.
+func imageSpecYAML(ref string) string {
+	if repo, digest, found := strings.Cut(ref, "@"); found {
+		return fmt.Sprintf("repository: %s, digest: %s", repo, digest)
+	}
+	if i := strings.LastIndex(ref, ":"); i > strings.LastIndex(ref, "/") {
+		return fmt.Sprintf("repository: %s, tag: %s", ref[:i], ref[i+1:])
+	}
+	return "repository: " + ref
+}
 
 // applyManifest writes the given YAML to a temp file and applies it.
 func applyManifest(yaml string) {
