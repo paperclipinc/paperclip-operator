@@ -124,6 +124,20 @@ type InstanceSpec struct {
 	// +optional
 	Availability AvailabilitySpec `json:"availability,omitempty"`
 
+	// Workload selects the server workload kind.
+	//  - "StatefulSet" (default): per-instance PVC, stable identity. Required for
+	//    embedded database mode and for persistence-backed instances.
+	//  - "Deployment": stateless pods (ephemeral scratch); intended for
+	//    database.mode external/managed with objectStorage when replicas > 1.
+	//    Enables surge rollouts and avoids AZ-pinned per-ordinal PVCs under
+	//    autoscaling. Requires storage.persistence.enabled=false.
+	//  - "auto": Deployment when persistence is disabled AND database mode is
+	//    not embedded; StatefulSet otherwise.
+	// +kubebuilder:validation:Enum=StatefulSet;Deployment;auto
+	// +kubebuilder:default=StatefulSet
+	// +optional
+	Workload string `json:"workload,omitempty"`
+
 	// Probes configures liveness, readiness, and startup probes.
 	// +optional
 	Probes ProbesSpec `json:"probes,omitempty"`

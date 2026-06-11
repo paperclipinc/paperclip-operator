@@ -8269,6 +8269,23 @@ spec:
                         type: object
                     type: object
                 type: object
+              workload:
+                default: StatefulSet
+                description: |-
+                  Workload selects the server workload kind.
+                   - "StatefulSet" (default): per-instance PVC, stable identity. Required for
+                     embedded database mode and for persistence-backed instances.
+                   - "Deployment": stateless pods (ephemeral scratch); intended for
+                     database.mode external/managed with objectStorage when replicas > 1.
+                     Enables surge rollouts and avoids AZ-pinned per-ordinal PVCs under
+                     autoscaling. Requires storage.persistence.enabled=false.
+                   - "auto": Deployment when persistence is disabled AND database mode is
+                     not embedded; StatefulSet otherwise.
+                enum:
+                - StatefulSet
+                - Deployment
+                - auto
+                type: string
             type: object
           status:
             description: InstanceStatus defines the observed state of Instance.
