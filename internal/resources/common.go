@@ -70,12 +70,12 @@ func EffectiveReplicas(instance *paperclipv1alpha1.Instance) int32 {
 	return 1
 }
 
-// StatefulSetReplicas returns the replica count for the server StatefulSet.
-// When the instance is suspended, replicas is forced to 0 (scale-to-zero).
-// Otherwise it returns the effective replica count. When HPA is enabled the
-// controller preserves the current replica count on update so it does not
-// fight the autoscaler.
-func StatefulSetReplicas(instance *paperclipv1alpha1.Instance) int32 {
+// WorkloadReplicas returns the replica count for the server workload
+// (StatefulSet or Deployment). When the instance is suspended, replicas is
+// forced to 0 (scale-to-zero). Otherwise it returns the effective replica
+// count. When HPA is enabled the controller preserves the current replica
+// count on update so it does not fight the autoscaler.
+func WorkloadReplicas(instance *paperclipv1alpha1.Instance) int32 {
 	if instance.Spec.Suspended {
 		return 0
 	}
