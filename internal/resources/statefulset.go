@@ -922,8 +922,5 @@ func imagePullPolicy(instance *paperclipv1alpha1.Instance) corev1.PullPolicy {
 }
 
 func servicePort(instance *paperclipv1alpha1.Instance) int32 {
-	if instance.Spec.Networking.Service.Port > 0 {
-		return instance.Spec.Networking.Service.Port
-	}
-	return DefaultPort
+	return ServerPort(instance)
 }

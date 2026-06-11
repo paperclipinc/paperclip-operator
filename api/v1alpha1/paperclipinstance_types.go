@@ -1341,6 +1341,10 @@ type InstanceStatus struct {
 	// Selector is the label selector for the scale subresource (string form).
 	// +optional
 	Selector string `json:"selector,omitempty"`
+
+	// SchedulerLeader is the pod currently holding the scheduler lease (lease gating only).
+	// +optional
+	SchedulerLeader string `json:"schedulerLeader,omitempty"`
 }
 
 // ManagedResources tracks the names of managed Kubernetes resources.

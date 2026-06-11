@@ -21,7 +21,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -112,6 +114,17 @@ type InstanceReconciler struct {
 	Scheme         *runtime.Scheme
 	Recorder       record.EventRecorder
 	RegistryClient *registry.Client
+
+	// healthProbe fetches the scheduler block of a server pod's
+	// unauthenticated /api/health response. Nil selects the real HTTP
+	// implementation (httpHealthProbe); envtest injects a fake so leader
+	// discovery needs no pod network.
+	healthProbe func(podIP string, port int32) (schedulerHealth, error)
+
+	// healthClient is the shared short-timeout HTTP client used by
+	// httpHealthProbe, constructed once via healthClientOnce.
+	healthClient     *http.Client
+	healthClientOnce sync.Once
 }
 
 // +kubebuilder:rbac:groups=paperclip.inc,resources=instances,verbs=get;list;watch;create;update;patch;delete
@@ -374,6 +387,12 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.handleError(ctx, instance, "GrafanaDashboards", err)
 	}
 
+	// 14. Scheduler leader visibility (lease gating at replicas > 1 only):
+	// poll the pods' /api/health to discover the lease holder, label pods with
+	// their role, and record status.SchedulerLeader (persisted by updateStatus
+	// below). Never fatal; returns the polling requeue interval when active.
+	leaderVisibilityRequeue := r.reconcileLeaderVisibility(ctx, instance)
+
 	// Update status
 	if err := r.updateStatus(ctx, instance); err != nil {
 		return ctrl.Result{}, err
@@ -389,6 +408,9 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	requeueAfter := 5 * time.Minute
 	if autoUpdateRequeue.RequeueAfter > 0 && autoUpdateRequeue.RequeueAfter < requeueAfter {
 		requeueAfter = autoUpdateRequeue.RequeueAfter
+	}
+	if leaderVisibilityRequeue.RequeueAfter > 0 && leaderVisibilityRequeue.RequeueAfter < requeueAfter {
+		requeueAfter = leaderVisibilityRequeue.RequeueAfter
 	}
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
@@ -1514,12 +1536,8 @@ func (r *InstanceReconciler) setEndpoint(instance *paperclipv1alpha1.Instance) {
 		instance.Status.Endpoint = instance.Spec.Deployment.PublicURL
 		return
 	}
-	port := int32(3100)
-	if instance.Spec.Networking.Service.Port > 0 {
-		port = instance.Spec.Networking.Service.Port
-	}
 	instance.Status.Endpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
-		resources.ServiceName(instance), instance.Namespace, port)
+		resources.ServiceName(instance), instance.Namespace, resources.ServerPort(instance))
 }
 
 // allSubConditionsReady returns true when every condition except ConditionReady

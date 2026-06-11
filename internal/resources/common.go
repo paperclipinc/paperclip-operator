@@ -127,6 +127,17 @@ func EffectiveWorkloadIsDeployment(instance *paperclipv1alpha1.Instance) bool {
 	return UseDeploymentWorkload(instance) && !PersistenceEnabled(instance)
 }
 
+// ServerPort returns the Paperclip server container port: the configured
+// service port (spec.networking.service.port) or the default. It is the port
+// the container listens on, used by probes and by the operator's own
+// /api/health polling for scheduler leader discovery.
+func ServerPort(instance *paperclipv1alpha1.Instance) int32 {
+	if instance.Spec.Networking.Service.Port > 0 {
+		return instance.Spec.Networking.Service.Port
+	}
+	return DefaultPort
+}
+
 // UseTCPProbes returns true when probes should use TCP instead of HTTP.
 // This is needed in authenticated mode where /api/health returns 403.
 func UseTCPProbes(instance *paperclipv1alpha1.Instance) bool {

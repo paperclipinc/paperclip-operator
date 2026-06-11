@@ -8476,6 +8476,10 @@ spec:
                     description: Result is the result of the restore.
                     type: string
                 type: object
+              schedulerLeader:
+                description: SchedulerLeader is the pod currently holding the scheduler
+                  lease (lease gating only).
+                type: string
               selector:
                 description: Selector is the label selector for the scale subresource
                   (string form).
