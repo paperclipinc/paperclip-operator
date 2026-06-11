@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -65,6 +66,11 @@ const (
 	// ConditionWorkloadProfileValid indicates spec.workload is compatible with
 	// the rest of the spec. Advisory: it does not gate the Ready aggregate.
 	ConditionWorkloadProfileValid = "WorkloadProfileValid"
+	// ConditionMultiReplicaPreconditions indicates whether the prerequisites
+	// for running more than one replica (shared database, shared object
+	// storage) are satisfied. Advisory: it does not gate the Ready aggregate
+	// and is removed entirely while replicas <= 1.
+	ConditionMultiReplicaPreconditions = "MultiReplicaPreconditions"
 	// ConditionServiceReady indicates the Service is ready.
 	ConditionServiceReady = "ServiceReady"
 	// ConditionNetworkPolicyReady indicates the NetworkPolicy is reconciled.
@@ -280,6 +286,10 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return r.handleError(ctx, instance, "TailscaleConfig", err)
 		}
 	}
+
+	// 3.8. Advisory multi-replica warnings (conditions/events only, never fatal)
+	r.reconcileMultiReplicaPreconditions(instance)
+	r.warnPDBDrainSafety(instance)
 
 	// 4. Server workload (StatefulSet or Deployment, per spec.workload)
 	if err := r.reconcileServerWorkload(ctx, instance, extraPodAnnotations); err != nil {
@@ -854,6 +864,73 @@ func (r *InstanceReconciler) reconcileDeployment(ctx context.Context, instance *
 	return nil
 }
 
+// reconcileMultiReplicaPreconditions maintains the advisory
+// MultiReplicaPreconditions condition. While replicas <= 1 the condition is
+// removed entirely so single-replica instances carry no stale noise.
+func (r *InstanceReconciler) reconcileMultiReplicaPreconditions(instance *paperclipv1alpha1.Instance) {
+	replicas := resources.EffectiveReplicas(instance)
+	if replicas <= 1 {
+		meta.RemoveStatusCondition(&instance.Status.Conditions, ConditionMultiReplicaPreconditions)
+		return
+	}
+
+	var missing []string
+	if instance.Spec.Database.Mode == "embedded" {
+		missing = append(missing, "spec.database.mode is embedded (the embedded PGlite database cannot be shared between replicas; use mode external or managed)")
+	}
+	if instance.Spec.ObjectStorage == nil {
+		missing = append(missing, "spec.objectStorage is not configured (S3-compatible object storage is required for shared file state across replicas)")
+	}
+
+	if len(missing) == 0 {
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionMultiReplicaPreconditions,
+			Status:             metav1.ConditionTrue,
+			Reason:             "PreconditionsMet",
+			Message:            fmt.Sprintf("Multi-replica preconditions are met for %d replicas", replicas),
+			ObservedGeneration: instance.Generation,
+		})
+		return
+	}
+
+	message := fmt.Sprintf("Instance requests %d replicas but: %s", replicas, strings.Join(missing, "; "))
+	changed := meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionMultiReplicaPreconditions,
+		Status:             metav1.ConditionFalse,
+		Reason:             "PreconditionsNotMet",
+		Message:            message,
+		ObservedGeneration: instance.Generation,
+	})
+	// SetStatusCondition reports a change only when status/reason/message
+	// transition, so the Warning fires once per transition, not per reconcile.
+	if changed && r.Recorder != nil {
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "MultiReplicaPreconditionsNotMet", message)
+	}
+}
+
+// warnPDBDrainSafety emits an advisory event when the PDB floor meets or
+// exceeds the autoscaler floor: at minimum scale every pod is then required
+// by the PDB, disruptionsAllowed is 0, and node drains stall. Event only, no
+// condition.
+func (r *InstanceReconciler) warnPDBDrainSafety(instance *paperclipv1alpha1.Instance) {
+	if r.Recorder == nil {
+		return
+	}
+	pdb := instance.Spec.Availability.PodDisruptionBudget
+	as := instance.Spec.Availability.AutoScaling
+	if pdb == nil || !pdb.Enabled || pdb.MinAvailable == nil {
+		return
+	}
+	if as == nil || !as.Enabled || as.MinReplicas == nil {
+		return
+	}
+	if *pdb.MinAvailable >= *as.MinReplicas {
+		r.Recorder.Eventf(instance, corev1.EventTypeWarning, "PDBMayBlockDrains",
+			"podDisruptionBudget.minAvailable=%d >= autoScaling.minReplicas=%d: at minimum scale the PDB allows zero disruptions (disruptionsAllowed=0) and node drains may block; lower minAvailable or raise minReplicas",
+			*pdb.MinAvailable, *as.MinReplicas)
+	}
+}
+
 func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance *paperclipv1alpha1.Instance, extraPodAnnotations map[string]string) error {
 	desired := resources.BuildStatefulSet(instance, extraPodAnnotations)
 	obj := &appsv1.StatefulSet{
@@ -1379,7 +1456,7 @@ func allSubConditionsReady(conditions []metav1.Condition) bool {
 		}
 		// Advisory conditions warn about spec combinations; they must not gate
 		// readiness of the managed resources themselves.
-		if cond.Type == ConditionWorkloadProfileValid {
+		if cond.Type == ConditionWorkloadProfileValid || cond.Type == ConditionMultiReplicaPreconditions {
 			continue
 		}
 		if cond.Status != metav1.ConditionTrue {

@@ -68,6 +68,16 @@ func TestAllSubConditionsReady(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "advisory conditions do not gate readiness",
+			conditions: []metav1.Condition{
+				{Type: ConditionDatabaseReady, Status: metav1.ConditionTrue},
+				{Type: ConditionStatefulSetReady, Status: metav1.ConditionTrue},
+				{Type: ConditionWorkloadProfileValid, Status: metav1.ConditionFalse},
+				{Type: ConditionMultiReplicaPreconditions, Status: metav1.ConditionFalse},
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {

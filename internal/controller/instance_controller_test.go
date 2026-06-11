@@ -326,4 +326,68 @@ var _ = Describe("Instance Controller", func() {
 			Expect(cond.Message).To(ContainSubstring("persistence"))
 		})
 	})
+
+	Context("When checking multi-replica preconditions", func() {
+		ctx := context.Background()
+
+		It("tracks the MultiReplicaPreconditions condition across spec changes", func() {
+			nn := types.NamespacedName{Name: "multireplica-preconditions", Namespace: "default"}
+			defer func() {
+				resource := &paperclipv1alpha1.Instance{}
+				if err := k8sClient.Get(ctx, nn, resource); err == nil {
+					Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+					r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+					_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+				}
+			}()
+
+			By("creating an Instance with replicas=3 and an embedded database")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:        paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Database:     paperclipv1alpha1.DatabaseSpec{Mode: "embedded"},
+					Availability: paperclipv1alpha1.AvailabilitySpec{Replicas: resources.Ptr(int32(3))},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			By("verifying MultiReplicaPreconditions=False naming both gaps")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			cond := meta.FindStatusCondition(updated.Status.Conditions, ConditionMultiReplicaPreconditions)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Message).To(ContainSubstring("embedded"))
+			Expect(cond.Message).To(ContainSubstring("objectStorage"))
+
+			By("switching to an external database with object storage")
+			updated.Spec.Database = paperclipv1alpha1.DatabaseSpec{
+				Mode:        "external",
+				ExternalURL: "postgres://user:pass@db.example.com:5432/paperclip",
+			}
+			updated.Spec.ObjectStorage = &paperclipv1alpha1.ObjectStorageSpec{
+				Provider: "s3",
+				Bucket:   "paperclip-shared",
+			}
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			cond = meta.FindStatusCondition(updated.Status.Conditions, ConditionMultiReplicaPreconditions)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+
+			By("scaling back to one replica removes the condition")
+			updated.Spec.Availability.Replicas = resources.Ptr(int32(1))
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(meta.FindStatusCondition(updated.Status.Conditions, ConditionMultiReplicaPreconditions)).To(BeNil())
+		})
+	})
 })
