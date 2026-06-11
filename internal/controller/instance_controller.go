@@ -829,9 +829,9 @@ func (r *InstanceReconciler) reconcileDeployment(ctx context.Context, instance *
 		return fmt.Errorf("reconciling Deployment: %w", err)
 	}
 
-	// status.managedResources has no deployment field yet (adding one is a CRD
-	// change); clear the statefulSet entry so it does not point at the deleted
-	// workload after a kind migration.
+	// Track the Deployment and clear the statefulSet entry so it does not
+	// point at the deleted workload after a kind migration.
+	instance.Status.ManagedResources.Deployment = obj.Name
 	instance.Status.ManagedResources.StatefulSet = ""
 
 	// Update Deployment condition (mirrors the StatefulSetReady semantics)
@@ -955,7 +955,10 @@ func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance 
 		return fmt.Errorf("reconciling StatefulSet: %w", err)
 	}
 
+	// Track the StatefulSet and clear the deployment entry so it does not
+	// point at the deleted workload after a kind migration.
 	instance.Status.ManagedResources.StatefulSet = obj.Name
+	instance.Status.ManagedResources.Deployment = ""
 
 	// Update StatefulSet condition
 	status := metav1.ConditionFalse
@@ -1377,6 +1380,7 @@ func (r *InstanceReconciler) reconcileGrafanaDashboards(ctx context.Context, ins
 
 func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
 	instance.Status.ObservedGeneration = instance.Generation
+	r.updateScaleStatus(ctx, instance)
 
 	// Suspended: override phase and readiness. The workload is scaled to zero
 	// but all non-runtime resources remain managed.
@@ -1429,6 +1433,30 @@ func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *papercl
 	r.setEndpoint(instance)
 
 	return r.Status().Update(ctx, instance)
+}
+
+// updateScaleStatus populates the scale-subresource status fields
+// (status.replicas, status.selector) from the active server workload. The
+// Deployment and StatefulSet share name and selector by construction, so the
+// selector string is identical across workload kinds. A missing workload
+// (e.g. before the first reconcile completes) leaves the fields unchanged.
+func (r *InstanceReconciler) updateScaleStatus(ctx context.Context, instance *paperclipv1alpha1.Instance) {
+	key := client.ObjectKey{Namespace: instance.Namespace, Name: resources.StatefulSetName(instance)}
+	if resources.EffectiveWorkloadIsDeployment(instance) {
+		deploy := &appsv1.Deployment{}
+		if err := r.Get(ctx, key, deploy); err != nil {
+			return
+		}
+		instance.Status.Replicas = deploy.Status.Replicas
+		instance.Status.Selector = metav1.FormatLabelSelector(deploy.Spec.Selector)
+		return
+	}
+	sts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, key, sts); err != nil {
+		return
+	}
+	instance.Status.Replicas = sts.Status.Replicas
+	instance.Status.Selector = metav1.FormatLabelSelector(sts.Spec.Selector)
 }
 
 // setEndpoint records the primary service endpoint URL in status.

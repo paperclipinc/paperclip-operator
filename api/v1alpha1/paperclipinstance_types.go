@@ -1083,8 +1083,10 @@ type LoggingSpec struct {
 
 // AvailabilitySpec configures scaling and pod scheduling.
 type AvailabilitySpec struct {
-	// Replicas is the desired number of Paperclip server pods.
-	// Ignored when autoScaling is enabled (the HPA manages replicas).
+	// Replicas is the desired number of Paperclip server pods. This field is
+	// also the target of the scale subresource, so `kubectl scale` writes it.
+	// Ignored when autoScaling is enabled (the HPA manages replicas), which
+	// makes `kubectl scale` a no-op while the HPA is active.
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	// +optional
@@ -1316,12 +1318,22 @@ type InstanceStatus struct {
 	// AutoUpdate tracks the state of automatic image update checks.
 	// +optional
 	AutoUpdate *AutoUpdateStatus `json:"autoUpdate,omitempty"`
+
+	// Replicas is the observed replica count of the active server workload (scale subresource).
+	// +optional
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// Selector is the label selector for the scale subresource (string form).
+	// +optional
+	Selector string `json:"selector,omitempty"`
 }
 
 // ManagedResources tracks the names of managed Kubernetes resources.
 type ManagedResources struct {
 	// +optional
 	StatefulSet string `json:"statefulSet,omitempty"`
+	// +optional
+	Deployment string `json:"deployment,omitempty"`
 	// +optional
 	Service string `json:"service,omitempty"`
 	// +optional
@@ -1393,6 +1405,7 @@ type AutoUpdateStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:subresource:scale:specpath=.spec.availability.replicas,statuspath=.status.replicas,selectorpath=.status.selector
 // +kubebuilder:resource:shortName=pci
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Endpoint",type=string,JSONPath=`.status.endpoint`

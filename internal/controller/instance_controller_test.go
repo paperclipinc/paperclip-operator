@@ -23,11 +23,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -324,6 +326,82 @@ var _ = Describe("Instance Controller", func() {
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal("PersistenceRequiresStatefulSet"))
 			Expect(cond.Message).To(ContainSubstring("persistence"))
+		})
+	})
+
+	Context("When using the scale subresource", func() {
+		ctx := context.Background()
+
+		It("round-trips replicas through /scale and reports status.replicas and status.selector", func() {
+			nn := types.NamespacedName{Name: "scale-subresource", Namespace: "default"}
+			defer func() {
+				resource := &paperclipv1alpha1.Instance{}
+				if err := k8sClient.Get(ctx, nn, resource); err == nil {
+					Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+					r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+					_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+				}
+			}()
+
+			By("creating a Deployment-workload Instance")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:    paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Workload: "Deployment",
+					Database: paperclipv1alpha1.DatabaseSpec{
+						Mode:        "external",
+						ExternalURL: "postgres://user:pass@db.example.com:5432/paperclip",
+					},
+					Storage: paperclipv1alpha1.StorageSpec{
+						Persistence: paperclipv1alpha1.PersistenceSpec{Enabled: resources.Ptr(false)},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			By("reading the scale subresource")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			scale := &autoscalingv1.Scale{}
+			Expect(k8sClient.SubResource("scale").Get(ctx, updated, scale)).To(Succeed())
+			Expect(scale.Spec.Replicas).To(Equal(int32(1))) // defaulted spec.availability.replicas
+			wantSelector := metav1.FormatLabelSelector(&metav1.LabelSelector{
+				MatchLabels: resources.SelectorLabels(updated),
+			})
+			Expect(scale.Status.Selector).To(Equal(wantSelector))
+			Expect(updated.Status.Selector).To(Equal(wantSelector))
+
+			By("scaling to 3 replicas through the scale subresource")
+			scale.Spec.Replicas = 3
+			Expect(k8sClient.SubResource("scale").Update(ctx, updated, client.WithSubResourceBody(scale))).To(Succeed())
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Spec.Availability.Replicas).NotTo(BeNil())
+			Expect(*updated.Spec.Availability.Replicas).To(Equal(int32(3)))
+
+			By("verifying the reconciled Deployment picks up the scaled replica count")
+			reconcileN(ctx, r, nn, 1)
+			deploy := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy)).To(Succeed())
+			Expect(deploy.Spec.Replicas).NotTo(BeNil())
+			Expect(*deploy.Spec.Replicas).To(Equal(int32(3)))
+
+			By("verifying status.replicas mirrors the observed workload replicas")
+			// envtest runs no Deployment controller, so simulate its status.
+			deploy.Status.Replicas = 3
+			Expect(k8sClient.Status().Update(ctx, deploy)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Status.Replicas).To(Equal(int32(3)))
+			Expect(updated.Status.ManagedResources.Deployment).To(Equal(nn.Name))
+			Expect(updated.Status.ManagedResources.StatefulSet).To(BeEmpty())
+			Expect(k8sClient.SubResource("scale").Get(ctx, updated, scale)).To(Succeed())
+			Expect(scale.Status.Replicas).To(Equal(int32(3)))
 		})
 	})
 
