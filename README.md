@@ -595,6 +595,23 @@ spec:
 
 ### Scaling
 
+#### Workload profiles
+
+`spec.workload` selects how the server runs:
+
+```yaml
+spec:
+  workload: auto   # "StatefulSet" (default), "Deployment", or "auto"
+```
+
+| Profile | Use for | Behavior |
+|---------|---------|----------|
+| `StatefulSet` (default) | Single replica, persistence, or embedded database | Stable pod identity with a per-instance PVC; rolling updates replace pods in place |
+| `Deployment` | Stateless multi-replica (external/managed database + `objectStorage`, persistence off) | Surge rollouts (`maxSurge: 1`, `maxUnavailable: 0`) so capacity never drops, no AZ-pinned per-ordinal PVCs, HPA-friendly scale-in |
+| `auto` | Let the operator decide | Deployment when persistence is disabled and the database is not embedded; StatefulSet otherwise |
+
+> **PVC safety:** `workload: Deployment` requires `storage.persistence.enabled: false` -- the ReadWriteOnce data PVC cannot be shared by surging Deployment pods. If persistence is still enabled, the operator keeps the StatefulSet and reports the `WorkloadProfileValid: False` condition.
+
 #### Manual replicas
 
 ```yaml
@@ -603,7 +620,22 @@ spec:
     replicas: 3
 ```
 
-When running multiple replicas, use `database.mode: external` with a production-grade PostgreSQL service and configure `objectStorage` for shared file access. The operator ensures only pod-0 runs the heartbeat scheduler.
+When running multiple replicas, use `database.mode: external` (or `managed`) with a production-grade PostgreSQL service and configure `objectStorage` for shared file access -- the operator surfaces a `MultiReplicaPreconditions: False` condition (plus a Warning event) at `replicas > 1` until both are in place. The operator ensures only one pod runs the heartbeat scheduler.
+
+The Instance CRD exposes the scale subresource (`status.replicas` / `status.selector` track the active workload), so standard tooling works:
+
+```bash
+kubectl scale instance/my-paperclip --replicas=3
+```
+
+External autoscalers like KEDA can target the instance directly:
+
+```yaml
+scaleTargetRef:
+  apiVersion: paperclip.inc/v1alpha1
+  kind: Instance
+  name: my-paperclip
+```
 
 #### Horizontal Pod Autoscaler
 
@@ -618,7 +650,7 @@ spec:
       targetMemoryUtilizationPercentage: 70       # optional
 ```
 
-When auto-scaling is enabled, the HPA manages the replica count and the StatefulSet's `replicas` field is set to nil.
+When auto-scaling is enabled, the HPA owns the replica count: the operator preserves the workload's current `replicas` on every reconcile, and `spec.availability.replicas` (including writes via `kubectl scale`) is ignored.
 
 #### Pod Disruption Budget
 
@@ -629,6 +661,23 @@ spec:
       enabled: true
       minAvailable: 1
       # or: maxUnavailable: 1
+```
+
+Keep `minAvailable` strictly below `autoScaling.minReplicas`: when they are equal, the PDB allows zero disruptions at minimum scale and node drains stall (the operator emits a `PDBMayBlockDrains` warning event). If unhealthy pods blocking drains is a concern, manage your own PDB instead of the operator's and set the eviction policy:
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: my-paperclip-pdb
+spec:
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow   # evict crash-looping pods during drains
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: paperclip
+      app.kubernetes.io/instance: my-paperclip
+      app.kubernetes.io/component: server
 ```
 
 #### Topology Spread Constraints
