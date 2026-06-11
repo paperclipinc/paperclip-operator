@@ -208,7 +208,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `replicas` _integer_ | Replicas is the desired number of Paperclip server pods.<br />Ignored when autoScaling is enabled (the HPA manages replicas). | 1 | Minimum: 1 <br />Optional: \{\} <br /> |
+| `replicas` _integer_ | Replicas is the desired number of Paperclip server pods. This field is<br />also the target of the scale subresource, so `kubectl scale` writes it.<br />Ignored when autoScaling is enabled (the HPA manages replicas), which<br />makes `kubectl scale` a no-op while the HPA is active. | 1 | Minimum: 1 <br />Optional: \{\} <br /> |
 | `podDisruptionBudget` _[PDBSpec](#pdbspec)_ | PodDisruptionBudget configures the PDB. |  | Optional: \{\} <br /> |
 | `autoScaling` _[AutoScalingSpec](#autoscalingspec)_ | AutoScaling configures the HorizontalPodAutoscaler. |  | Optional: \{\} <br /> |
 | `nodeSelector` _object (keys:string, values:string)_ | NodeSelector specifies node selection constraints. |  | Optional: \{\} <br /> |
@@ -601,6 +601,7 @@ _Appears in:_
 | `networking` _[NetworkingSpec](#networkingspec)_ | Networking configures service, ingress, and WebSocket settings. |  | Optional: \{\} <br /> |
 | `observability` _[ObservabilitySpec](#observabilityspec)_ | Observability configures metrics, logging, and monitoring. |  | Optional: \{\} <br /> |
 | `availability` _[AvailabilitySpec](#availabilityspec)_ | Availability configures scaling, PDB, and pod scheduling. |  | Optional: \{\} <br /> |
+| `workload` _string_ | Workload selects the server workload kind.<br /> - "StatefulSet" (default): per-instance PVC, stable identity. Required for<br />   embedded database mode and for persistence-backed instances.<br /> - "Deployment": stateless pods (ephemeral scratch); intended for<br />   database.mode external/managed with objectStorage when replicas > 1.<br />   Enables surge rollouts and avoids AZ-pinned per-ordinal PVCs under<br />   autoscaling. Requires storage.persistence.enabled=false.<br /> - "auto": Deployment when persistence is disabled AND database mode is<br />   not embedded; StatefulSet otherwise. | StatefulSet | Enum: [StatefulSet Deployment auto] <br />Optional: \{\} <br /> |
 | `probes` _[ProbesSpec](#probesspec)_ | Probes configures liveness, readiness, and startup probes. |  | Optional: \{\} <br /> |
 | `backup` _[BackupSpec](#backupspec)_ | Backup configures periodic backup to S3-compatible storage. |  | Optional: \{\} <br /> |
 | `restoreFrom` _string_ | RestoreFrom specifies a remote backup path to restore from on first boot. |  | Optional: \{\} <br /> |
