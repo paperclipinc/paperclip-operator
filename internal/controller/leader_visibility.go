@@ -75,16 +75,16 @@ type schedulerHealth struct {
 
 // probeSchedulerHealth resolves the health probe implementation: the injected
 // test fake when set, otherwise the real HTTP poll.
-func (r *InstanceReconciler) probeSchedulerHealth(ctx context.Context, podIP string, port int32) (schedulerHealth, error) {
+func (r *InstanceReconciler) probeSchedulerHealth(ctx context.Context, podIP string, port int32, hostHeader string) (schedulerHealth, error) {
 	if r.healthProbe != nil {
 		return r.healthProbe(podIP, port)
 	}
-	return r.httpHealthProbe(ctx, podIP, port)
+	return r.httpHealthProbe(ctx, podIP, port, hostHeader)
 }
 
 // httpHealthProbe performs the real GET http://<podIP>:<port>/api/health and
 // parses the scheduler block. The shared client is constructed once.
-func (r *InstanceReconciler) httpHealthProbe(ctx context.Context, podIP string, port int32) (schedulerHealth, error) {
+func (r *InstanceReconciler) httpHealthProbe(ctx context.Context, podIP string, port int32, hostHeader string) (schedulerHealth, error) {
 	var health schedulerHealth
 
 	r.healthClientOnce.Do(func() {
@@ -96,6 +96,10 @@ func (r *InstanceReconciler) httpHealthProbe(ctx context.Context, podIP string, 
 	if err != nil {
 		return health, fmt.Errorf("building health request for %s: %w", url, err)
 	}
+	// The app enforces a Host-header allowlist (service DNS + loopback);
+	// a pod-IP Host is rejected with 403, so present the service FQDN
+	// while still dialing the specific pod's IP.
+	req.Host = hostHeader
 	resp, err := r.healthClient.Do(req)
 	if err != nil {
 		return health, fmt.Errorf("polling %s: %w", url, err)
@@ -148,7 +152,8 @@ func (r *InstanceReconciler) reconcileLeaderVisibility(ctx context.Context, inst
 		if pod.Status.Phase != corev1.PodRunning || pod.Status.PodIP == "" || !pod.DeletionTimestamp.IsZero() {
 			continue
 		}
-		health, err := r.probeSchedulerHealth(ctx, pod.Status.PodIP, port)
+		health, err := r.probeSchedulerHealth(ctx, pod.Status.PodIP, port,
+			fmt.Sprintf("%s.%s.svc.cluster.local", resources.ServiceName(instance), instance.Namespace))
 		if err != nil {
 			log.V(1).Info("Skipping pod for scheduler leader visibility: health poll failed",
 				"pod", pod.Name, "reason", err.Error())
