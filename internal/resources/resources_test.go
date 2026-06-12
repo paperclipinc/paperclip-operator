@@ -43,7 +43,7 @@ func newTestInstance(name string) *paperclipv1alpha1.Instance {
 					Create: true,
 				},
 				NetworkPolicy: paperclipv1alpha1.NetworkPolicySpec{
-					Enabled: true,
+					Enabled: boolPtr(true),
 				},
 			},
 			Heartbeat: paperclipv1alpha1.HeartbeatSpec{

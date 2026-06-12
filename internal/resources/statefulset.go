@@ -248,6 +248,16 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		if os.Endpoint != "" {
 			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_STORAGE_S3_ENDPOINT", Value: os.Endpoint})
 		}
+		// Path-style addressing: explicit value wins; nil defaults to true for
+		// MinIO, whose in-cluster deployments lack the wildcard DNS that
+		// virtual-hosted bucket addressing requires.
+		forcePathStyle := os.Provider == "minio"
+		if os.ForcePathStyle != nil {
+			forcePathStyle = *os.ForcePathStyle
+		}
+		if forcePathStyle {
+			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE", Value: "true"})
+		}
 		if os.CredentialsSecretRef != nil {
 			vars = append(vars,
 				corev1.EnvVar{

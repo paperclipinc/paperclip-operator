@@ -98,6 +98,14 @@ func UseDeploymentWorkload(instance *paperclipv1alpha1.Instance) bool {
 
 // PersistenceEnabled reports whether the data PVC is enabled (defaults to
 // true when unset).
+// NetworkPolicyEnabled resolves the *bool (nil = default true).
+func NetworkPolicyEnabled(instance *paperclipv1alpha1.Instance) bool {
+	if instance.Spec.Security.NetworkPolicy.Enabled == nil {
+		return true
+	}
+	return *instance.Spec.Security.NetworkPolicy.Enabled
+}
+
 func PersistenceEnabled(instance *paperclipv1alpha1.Instance) bool {
 	if instance.Spec.Storage.Persistence.Enabled == nil {
 		return true

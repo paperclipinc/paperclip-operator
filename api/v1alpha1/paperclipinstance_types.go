@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -502,6 +503,14 @@ type ObjectStorageSpec struct {
 	// CredentialsSecretRef references a Secret containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
 	// +optional
 	CredentialsSecretRef *corev1.LocalObjectReference `json:"credentialsSecretRef,omitempty"`
+
+	// ForcePathStyle forces path-style S3 addressing (bucket in the URL path
+	// rather than the hostname). Defaults to true when provider is "minio"
+	// (virtual-hosted addressing needs wildcard DNS that in-cluster MinIO
+	// deployments don't have), false otherwise. Maps to
+	// PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE.
+	// +optional
+	ForcePathStyle *bool `json:"forcePathStyle,omitempty"`
 }
 
 // HeartbeatSpec configures the agent heartbeat scheduler.
@@ -876,9 +885,12 @@ type SecuritySpec struct {
 // NetworkPolicySpec configures network isolation.
 type NetworkPolicySpec struct {
 	// Enabled controls whether a NetworkPolicy is created. Defaults to true.
+	// Pointer so an explicit `false` survives marshaling (a plain bool with
+	// omitempty is dropped and re-defaulted to true by the API server on
+	// every controller update — same bug class as PersistenceSpec.Enabled).
 	// +kubebuilder:default=true
 	// +optional
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
 
 	// AllowIngressCIDRs specifies additional CIDR blocks allowed to reach the Paperclip service.
 	// +optional
@@ -891,6 +903,14 @@ type NetworkPolicySpec struct {
 	// +listType=set
 	// +kubebuilder:validation:items:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$`
 	AllowEgressCIDRs []string `json:"allowEgressCIDRs,omitempty"`
+
+	// ExtraEgress appends additional egress rules verbatim to the
+	// operator-managed NetworkPolicy — e.g. to reach an in-cluster
+	// object-storage endpoint (spec.objectStorage) or other services the
+	// default rules don't cover. Required when networkPolicy is enabled and
+	// objectStorage points at an in-cluster endpoint.
+	// +optional
+	ExtraEgress []networkingv1.NetworkPolicyEgressRule `json:"extraEgress,omitempty"`
 }
 
 // RBACSpec configures ServiceAccount and RBAC.
@@ -1279,6 +1299,14 @@ type BackupS3Spec struct {
 	// CredentialsSecretRef references a Secret containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
 	// +optional
 	CredentialsSecretRef *corev1.LocalObjectReference `json:"credentialsSecretRef,omitempty"`
+
+	// ForcePathStyle forces path-style S3 addressing (bucket in the URL path
+	// rather than the hostname). Defaults to true when provider is "minio"
+	// (virtual-hosted addressing needs wildcard DNS that in-cluster MinIO
+	// deployments don't have), false otherwise. Maps to
+	// PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE.
+	// +optional
+	ForcePathStyle *bool `json:"forcePathStyle,omitempty"`
 }
 
 // --- Status types ---

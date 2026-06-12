@@ -91,7 +91,7 @@ func newFullBenchInstance() *paperclipv1alpha1.Instance {
 			Security: paperclipv1alpha1.SecuritySpec{
 				RBAC: paperclipv1alpha1.RBACSpec{Create: true},
 				NetworkPolicy: paperclipv1alpha1.NetworkPolicySpec{
-					Enabled:           true,
+					Enabled:           boolPtr(true),
 					AllowIngressCIDRs: []string{"10.0.0.0/8"},
 					AllowEgressCIDRs:  []string{"10.0.0.0/8"},
 				},

@@ -336,7 +336,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// 7. NetworkPolicy (optional)
-	if instance.Spec.Security.NetworkPolicy.Enabled {
+	if resources.NetworkPolicyEnabled(instance) {
 		if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
 			return r.handleError(ctx, instance, "NetworkPolicy", err)
 		}
