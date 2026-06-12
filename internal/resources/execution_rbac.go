@@ -102,7 +102,10 @@ func executionPolicyRules(k *paperclipv1alpha1.K8sExecutionSpec) []rbacv1.Policy
 		// default "job" backend runs each agent as a batch/v1 Job).
 		{
 			APIGroups: []string{"batch"},
-			Resources: []string{"jobs"},
+			// jobs/status: the plugin polls Job completion via the status
+			// subresource; without it, runs fail with a 403 after the Job
+			// is created (found in live multi-replica verification).
+			Resources: []string{"jobs", "jobs/status"},
 			Verbs:     []string{"get", "list", "create", "delete"},
 		},
 	}
