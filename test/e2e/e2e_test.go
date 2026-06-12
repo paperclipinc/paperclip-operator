@@ -381,6 +381,11 @@ spec:
 
 		It("renders env for AWS Secrets Manager, E2B, and app-native backup", func() {
 			By("applying a feature-exercising Instance (embedded DB so no second Postgres)")
+			// mode is "authenticated" because this Instance runs the real app
+			// image: the app hard-rejects local_trusted on a non-loopback bind
+			// ("local_trusted requires server.bind=loopback") and would
+			// crash-loop in-cluster. The auth secret reuses e2e-auth, applied
+			// by the previous (ordered) spec in this namespace.
 			applyManifest(fmt.Sprintf(`
 apiVersion: v1
 kind: Secret
@@ -392,7 +397,9 @@ kind: Instance
 metadata: {name: e2e-feat, namespace: %[1]s}
 spec:
   image: {repository: ghcr.io/paperclipai/paperclip, tag: sha-244a5b8}
-  deployment: {mode: local_trusted, exposure: private}
+  deployment: {mode: authenticated, exposure: private}
+  auth:
+    secretRef: {name: e2e-auth, key: BETTER_AUTH_SECRET}
   database: {mode: embedded}
   secrets:
     provider: aws_secrets_manager
@@ -519,13 +526,26 @@ spec:
 		})
 
 		It("fails the scheduler lease over to a surviving replica when the leader pod dies", func() {
-			By("applying the external-DB secret and a 2-replica lease-gated Instance")
+			By("applying the external-DB + auth secrets and a 2-replica lease-gated Instance")
 			// objectStorage is intentionally omitted: MultiReplicaPreconditions
 			// reports False (S3 is required for shared file state across real
 			// multi-replica deployments), but the condition is advisory and the
 			// workload reconciles regardless. The failover assertions below do
 			// not touch file state, so a warning condition is acceptable here
 			// and keeps the scenario free of a MinIO dependency.
+			//
+			// deployment.mode MUST be "authenticated": the app hard-rejects
+			// local_trusted on a non-loopback bind ("local_trusted requires
+			// server.bind=loopback", packages/shared/src/network-bind.ts in the
+			// app repo), and in-cluster pods always bind 0.0.0.0, so a
+			// local_trusted Instance crash-loops and never elects a leader.
+			// auth.adminUser is intentionally NOT set: it would spawn the admin
+			// bootstrap Job, which proved flaky live (job pod killed mid-run,
+			// backoffLimit exceeded) and this scenario needs no authenticated
+			// API access - the operator reads scheduler leadership from the
+			// unauthenticated redacted health endpoint. (If an e2e ever needs a
+			// principal, the deterministic path is plain HTTP: sign up via the
+			// service URL, then POST /api/bootstrap/claim.)
 			applyManifest(fmt.Sprintf(`
 apiVersion: v1
 kind: Secret
@@ -533,13 +553,21 @@ metadata: {name: e2e-lease-db, namespace: %[1]s}
 stringData:
   DATABASE_URL: postgresql://paperclip:paperclip@%[3]s.%[1]s.svc.cluster.local:5432/paperclip
 ---
+apiVersion: v1
+kind: Secret
+metadata: {name: e2e-lease-auth, namespace: %[1]s}
+stringData:
+  BETTER_AUTH_SECRET: dd5e3ca83629aa01987178b7871d70b755ddbc987d4e77f158838488fd4786ac
+---
 apiVersion: paperclip.inc/v1alpha1
 kind: Instance
 metadata: {name: %[2]s, namespace: %[1]s}
 spec:
   image: {%[4]s}
   workload: Deployment
-  deployment: {mode: local_trusted, exposure: private}
+  deployment: {mode: authenticated, exposure: private}
+  auth:
+    secretRef: {name: e2e-lease-auth, key: BETTER_AUTH_SECRET}
   database:
     mode: external
     externalURLSecretRef: {name: e2e-lease-db, key: DATABASE_URL}
