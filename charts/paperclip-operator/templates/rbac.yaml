@@ -90,7 +90,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Batch (bootstrap jobs, backup cronjobs)
   - apiGroups: ["batch"]
-    resources: ["jobs"]
+    resources: ["jobs", "jobs/status"]
     verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["batch"]
     resources: ["cronjobs"]
