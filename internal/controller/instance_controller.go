@@ -1279,22 +1279,52 @@ func (r *InstanceReconciler) reconcileBootstrapJob(ctx context.Context, instance
 		return nil
 	}
 
-	// Check if Job already exists (it should only run once)
+	// A Job's pod template is immutable after creation, so this reconcile is
+	// strictly create-if-absent and never patches an existing Job in place.
+	// Patching spec.template (even a no-op re-render) makes the Job controller
+	// churn and can delete the running bootstrap pod, tripping
+	// BackoffLimitExceeded (issue #83). If the operator-controlled inputs change
+	// we delete and recreate the Job instead, gated on a content-hash so a
+	// steady-state reconcile is a no-op.
 	existing := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, existing)
 	if err == nil {
-		// Job already exists, nothing to do
+		// Job already exists. If its content hash matches the desired spec,
+		// leave it completely alone (do NOT touch spec.template).
+		if existing.Annotations[resources.BootstrapHashAnnotation] ==
+			desired.Annotations[resources.BootstrapHashAnnotation] {
+			return nil
+		}
+
+		// The bootstrap config changed. A Job's template cannot be updated, so
+		// delete the stale Job (foreground propagation so its pods are removed
+		// before we recreate) and recreate on a later reconcile. We do not
+		// recreate in the same pass to avoid racing the API server's
+		// asynchronous cascade delete.
+		logf.FromContext(ctx).Info("bootstrap Job content changed; replacing",
+			"job", desired.Name)
+		propagation := metav1.DeletePropagationForeground
+		if delErr := r.Delete(ctx, existing, &client.DeleteOptions{
+			PropagationPolicy: &propagation,
+		}); delErr != nil && !apierrors.IsNotFound(delErr) {
+			return fmt.Errorf("deleting stale bootstrap Job: %w", delErr)
+		}
 		return nil
 	}
 	if !apierrors.IsNotFound(err) {
 		return fmt.Errorf("checking bootstrap Job: %w", err)
 	}
 
-	// Job does not exist, create it
+	// Job does not exist, create it.
 	if err := controllerutil.SetControllerReference(instance, desired, r.Scheme); err != nil {
 		return fmt.Errorf("setting owner reference on bootstrap Job: %w", err)
 	}
 	if err := r.Create(ctx, desired); err != nil { // reconcile-guard:allow
+		if apierrors.IsAlreadyExists(err) {
+			// Lost a create race with the just-deleted Job's cascade; the next
+			// reconcile will converge.
+			return nil
+		}
 		return fmt.Errorf("creating bootstrap Job: %w", err)
 	}
 
