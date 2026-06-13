@@ -26,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -660,6 +661,119 @@ var _ = Describe("Instance Controller", func() {
 
 			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
 			Expect(meta.FindStatusCondition(updated.Status.Conditions, ConditionSchedulerGatingValid)).To(BeNil())
+		})
+	})
+
+	// Regression for issue #83: the bootstrap Job (spec.auth.adminUser) must be
+	// reconciled idempotently. A Job's pod template is immutable, so re-rendering
+	// or patching it on every reconcile makes the Job controller churn and kill
+	// the running bootstrap pod (SuccessfulDelete ~1s after start ->
+	// BackoffLimitExceeded). Steady-state reconciles must leave the Job entirely
+	// untouched; only a real config change may replace it (delete + recreate).
+	Context("When reconciling the admin bootstrap Job", func() {
+		ctx := context.Background()
+
+		newBootstrapInstance := func(name, email string) *paperclipv1alpha1.Instance {
+			return &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image: paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Auth: paperclipv1alpha1.AuthSpec{
+						AdminUser: &paperclipv1alpha1.AdminUserSpec{
+							Email: email,
+							PasswordSecretRef: corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "admin-secret"},
+								Key:                  "password",
+							},
+						},
+					},
+				},
+			}
+		}
+
+		It("does not update or recreate the Job across repeated reconciles", func() {
+			const bootName = "bootstrap-idem"
+			nn := types.NamespacedName{Name: bootName, Namespace: "default"}
+			jobNN := types.NamespacedName{Name: bootName + "-bootstrap", Namespace: "default"}
+
+			Expect(k8sClient.Create(ctx, newBootstrapInstance(bootName, "admin@test.com"))).To(Succeed())
+			DeferCleanup(func() {
+				resource := &paperclipv1alpha1.Instance{}
+				if err := k8sClient.Get(ctx, nn, resource); err == nil {
+					_ = k8sClient.Delete(ctx, resource)
+				}
+			})
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+
+			By("reconciling twice so the finalizer requeue passes and the Job is created")
+			reconcileN(ctx, r, nn, 2)
+
+			job := &batchv1.Job{}
+			Expect(k8sClient.Get(ctx, jobNN, job)).To(Succeed())
+			originalUID := job.UID
+			originalRV := job.ResourceVersion
+			Expect(job.Annotations).To(HaveKey(resources.BootstrapHashAnnotation))
+
+			By("asserting the Job has an explicit, unique selector so its pods cannot be adopted")
+			Expect(job.Spec.ManualSelector).NotTo(BeNil())
+			Expect(*job.Spec.ManualSelector).To(BeTrue())
+			Expect(job.Spec.Selector).NotTo(BeNil())
+			Expect(job.Spec.Selector.MatchLabels).To(HaveKeyWithValue(resources.BootstrapJobLabel, jobNN.Name))
+			Expect(job.Spec.Template.Labels).To(HaveKeyWithValue(resources.BootstrapJobLabel, jobNN.Name))
+
+			By("reconciling several more times")
+			reconcileN(ctx, r, nn, 5)
+
+			By("verifying the Job was neither updated (same resourceVersion) nor recreated (same UID)")
+			after := &batchv1.Job{}
+			Expect(k8sClient.Get(ctx, jobNN, after)).To(Succeed())
+			Expect(after.UID).To(Equal(originalUID), "bootstrap Job was recreated on a steady-state reconcile")
+			Expect(after.ResourceVersion).To(Equal(originalRV), "bootstrap Job spec was mutated on a steady-state reconcile")
+		})
+
+		It("replaces the Job (delete + recreate) only when the bootstrap config changes", func() {
+			const bootName = "bootstrap-replace"
+			nn := types.NamespacedName{Name: bootName, Namespace: "default"}
+			jobNN := types.NamespacedName{Name: bootName + "-bootstrap", Namespace: "default"}
+
+			Expect(k8sClient.Create(ctx, newBootstrapInstance(bootName, "admin@test.com"))).To(Succeed())
+			DeferCleanup(func() {
+				resource := &paperclipv1alpha1.Instance{}
+				if err := k8sClient.Get(ctx, nn, resource); err == nil {
+					_ = k8sClient.Delete(ctx, resource)
+				}
+			})
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			job := &batchv1.Job{}
+			Expect(k8sClient.Get(ctx, jobNN, job)).To(Succeed())
+			originalUID := job.UID
+
+			By("changing the admin email, which changes the bootstrap content hash")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			updated.Spec.Auth.AdminUser.Email = "different@test.com"
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+
+			By("the next reconcile deletes the stale Job (template is immutable, cannot patch)")
+			reconcileN(ctx, r, nn, 1)
+			// Foreground deletion may leave the object briefly with a deletion
+			// timestamp; remove any finalizers the envtest GC won't process.
+			stale := &batchv1.Job{}
+			if err := k8sClient.Get(ctx, jobNN, stale); err == nil && stale.DeletionTimestamp != nil {
+				stale.Finalizers = nil
+				_ = k8sClient.Update(ctx, stale)
+			}
+			Eventually(func() bool {
+				return errors.IsNotFound(k8sClient.Get(ctx, jobNN, &batchv1.Job{}))
+			}).Should(BeTrue(), "stale bootstrap Job should be deleted")
+
+			By("a subsequent reconcile recreates the Job with a new UID")
+			reconcileN(ctx, r, nn, 1)
+			recreated := &batchv1.Job{}
+			Expect(k8sClient.Get(ctx, jobNN, recreated)).To(Succeed())
+			Expect(recreated.UID).NotTo(Equal(originalUID), "Job should have been recreated, not patched in place")
 		})
 	})
 })

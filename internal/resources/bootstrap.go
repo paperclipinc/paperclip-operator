@@ -1,6 +1,8 @@
 package resources
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -10,6 +12,20 @@ import (
 
 	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
 )
+
+// BootstrapHashAnnotation records a content hash of the operator-controlled
+// inputs to the bootstrap Job. Because a Job's pod template is immutable after
+// creation, the reconciler never patches an existing Job in place; instead it
+// compares this annotation and, only when it differs, deletes and recreates the
+// Job. A steady-state reconcile sees an unchanged hash and is a no-op.
+const BootstrapHashAnnotation = "paperclip.ai/bootstrap-spec-hash"
+
+// BootstrapJobLabel is a per-Job unique pod label. It is part of the Job's
+// explicit selector (manualSelector) so the Job controller can never adopt a
+// pod left over from a previous bootstrap Job of the same name. Adopting a
+// stale/orphaned pod is what made the Job controller reap its own pod ~1s after
+// start and then report BackoffLimitExceeded (issue #83).
+const BootstrapJobLabel = "paperclip.ai/bootstrap-job"
 
 // sanitizeJSONString escapes special characters for safe embedding in a JSON string literal
 // inside a shell script. Prevents JSON injection via user-controlled CRD fields.
@@ -156,18 +172,34 @@ echo "Admin bootstrap finished successfully."
 	backoffLimit := int32(3)
 	ttl := int32(3600) // Clean up completed job after 1 hour
 
-	return &batchv1.Job{
+	jobName := BootstrapJobName(instance)
+
+	// Pod template labels: the standard component labels plus a per-Job unique
+	// label. The unique label is also the Job's explicit selector
+	// (manualSelector=true) so this Job's pods can never be confused with — or
+	// adopted from — a previous bootstrap Job of the same name. Without an
+	// explicit, unique selector the Job controller could adopt a leftover/
+	// orphaned pod and then delete it, killing the running bootstrap pod ~1s
+	// after start and tripping BackoffLimitExceeded (issue #83).
+	podLabels := LabelsWithComponent(instance, "bootstrap")
+	podLabels[BootstrapJobLabel] = jobName
+
+	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      BootstrapJobName(instance),
+			Name:      jobName,
 			Namespace: instance.Namespace,
 			Labels:    LabelsWithComponent(instance, "bootstrap"),
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoffLimit,
 			TTLSecondsAfterFinished: &ttl,
+			ManualSelector:          Ptr(true),
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{BootstrapJobLabel: jobName},
+			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: LabelsWithComponent(instance, "bootstrap"),
+					Labels: podLabels,
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:                corev1.RestartPolicyOnFailure,
@@ -210,4 +242,30 @@ echo "Admin bootstrap finished successfully."
 			},
 		},
 	}
+
+	// Stamp a content hash of the operator-controlled inputs. The reconciler
+	// uses this to decide whether an existing Job is up to date (no-op) or must
+	// be replaced (delete + recreate); it never patches the immutable template
+	// in place.
+	if job.Annotations == nil {
+		job.Annotations = map[string]string{}
+	}
+	job.Annotations[BootstrapHashAnnotation] = bootstrapSpecHash(image, script, admin)
+
+	return job
+}
+
+// bootstrapSpecHash returns a stable hash over the operator-controlled inputs to
+// the bootstrap Job. It intentionally excludes server-defaulted/mutable fields
+// so a steady-state reconcile produces an identical hash and is a no-op.
+func bootstrapSpecHash(image, script string, admin *paperclipv1alpha1.AdminUserSpec) string {
+	// The script already embeds the resolved admin name, service/base URLs and
+	// the JSON sign-up payload, so it captures most config drift. Include the
+	// image, admin email and the password secret reference explicitly so a
+	// change to credentials forces a fresh Job.
+	payload := fmt.Sprintf("image=%s\x00script=%s\x00email=%s\x00secret=%s/%s\x00",
+		image, script, admin.Email,
+		admin.PasswordSecretRef.Name, admin.PasswordSecretRef.Key)
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
 }
