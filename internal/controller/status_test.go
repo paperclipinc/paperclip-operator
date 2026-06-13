@@ -75,6 +75,7 @@ func TestAllSubConditionsReady(t *testing.T) {
 				{Type: ConditionStatefulSetReady, Status: metav1.ConditionTrue},
 				{Type: ConditionWorkloadProfileValid, Status: metav1.ConditionFalse},
 				{Type: ConditionMultiReplicaPreconditions, Status: metav1.ConditionFalse},
+				{Type: ConditionSchedulerGatingValid, Status: metav1.ConditionFalse},
 			},
 			want: true,
 		},

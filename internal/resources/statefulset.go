@@ -76,8 +76,13 @@ func buildMainContainer(instance *paperclipv1alpha1.Instance) corev1.Container {
 	container.Command = []string{"/bin/sh", "-c"}
 	script := "exec " + DefaultPaperclipEntrypoint
 	// Multi-replica heartbeat gating: only pod-0 runs the scheduler. Uses a shell
-	// wrapper that checks the StatefulSet ordinal in $HOSTNAME.
-	if instance.Spec.Heartbeat.Enabled && EffectiveReplicas(instance) > 1 {
+	// wrapper that checks the StatefulSet ordinal in $HOSTNAME. Applied only for
+	// the "ordinal" gating mode on the StatefulSet workload: "lease" delegates
+	// leadership to the app's lease-based leader election, and Deployment pods
+	// have no stable ordinals for the wrapper to match (the controller surfaces
+	// that combination via the SchedulerGatingValid condition).
+	if instance.Spec.Heartbeat.Enabled && EffectiveReplicas(instance) > 1 &&
+		SchedulerGatingMode(instance) == "ordinal" && !EffectiveWorkloadIsDeployment(instance) {
 		script = `case "$HOSTNAME" in *-0) export HEARTBEAT_SCHEDULER_ENABLED=true ;; *) export HEARTBEAT_SCHEDULER_ENABLED=false ;; esac; ` + script
 	}
 	container.Args = []string{script}
@@ -242,6 +247,16 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		}
 		if os.Endpoint != "" {
 			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_STORAGE_S3_ENDPOINT", Value: os.Endpoint})
+		}
+		// Path-style addressing: explicit value wins; nil defaults to true for
+		// MinIO, whose in-cluster deployments lack the wildcard DNS that
+		// virtual-hosted bucket addressing requires.
+		forcePathStyle := os.Provider == "minio"
+		if os.ForcePathStyle != nil {
+			forcePathStyle = *os.ForcePathStyle
+		}
+		if forcePathStyle {
+			vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE", Value: "true"})
 		}
 		if os.CredentialsSecretRef != nil {
 			vars = append(vars,
@@ -917,8 +932,5 @@ func imagePullPolicy(instance *paperclipv1alpha1.Instance) corev1.PullPolicy {
 }
 
 func servicePort(instance *paperclipv1alpha1.Instance) int32 {
-	if instance.Spec.Networking.Service.Port > 0 {
-		return instance.Spec.Networking.Service.Port
-	}
-	return DefaultPort
+	return ServerPort(instance)
 }

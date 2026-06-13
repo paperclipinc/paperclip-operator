@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -25,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -466,6 +468,198 @@ var _ = Describe("Instance Controller", func() {
 
 			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
 			Expect(meta.FindStatusCondition(updated.Status.Conditions, ConditionMultiReplicaPreconditions)).To(BeNil())
+		})
+	})
+
+	Context("When discovering the scheduler leader (lease gating)", func() {
+		ctx := context.Background()
+		nn := types.NamespacedName{Name: "leader-visibility", Namespace: "default"}
+
+		// makeServerPod creates a server pod carrying the instance's selector
+		// labels and forces it Running with the given pod IP (envtest runs no
+		// kubelet, so status is set through the status subresource).
+		makeServerPod := func(instance *paperclipv1alpha1.Instance, name, ip string) *corev1.Pod {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: nn.Namespace,
+					Labels:    resources.SelectorLabels(instance),
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "paperclip", Image: "ghcr.io/paperclipai/paperclip:v1.0.0"},
+					},
+				},
+			}
+			ExpectWithOffset(1, k8sClient.Create(ctx, pod)).To(Succeed())
+			pod.Status.Phase = corev1.PodRunning
+			pod.Status.PodIP = ip
+			ExpectWithOffset(1, k8sClient.Status().Update(ctx, pod)).To(Succeed())
+			return pod
+		}
+
+		AfterEach(func() {
+			for _, name := range []string{"leader-visibility-pod-0", "leader-visibility-pod-1"} {
+				pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: nn.Namespace}}
+				_ = k8sClient.Delete(ctx, pod, client.GracePeriodSeconds(0))
+			}
+			resource := &paperclipv1alpha1.Instance{}
+			if err := k8sClient.Get(ctx, nn, resource); err == nil {
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+				r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+				_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			}
+		})
+
+		It("labels the leader, sets status.schedulerLeader and deletion-cost, and clears on gating flip", func() {
+			By("creating a lease-gated Deployment-workload Instance with replicas=2")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:    paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Workload: "Deployment",
+					Database: paperclipv1alpha1.DatabaseSpec{
+						Mode:        "external",
+						ExternalURL: "postgres://user:pass@db.example.com:5432/paperclip",
+					},
+					ObjectStorage: &paperclipv1alpha1.ObjectStorageSpec{
+						Provider: "s3",
+						Bucket:   "paperclip-shared",
+					},
+					Storage: paperclipv1alpha1.StorageSpec{
+						Persistence: paperclipv1alpha1.PersistenceSpec{Enabled: resources.Ptr(false)},
+					},
+					Availability: paperclipv1alpha1.AvailabilitySpec{Replicas: resources.Ptr(int32(2))},
+					Heartbeat:    paperclipv1alpha1.HeartbeatSpec{SchedulerGating: "lease"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			By("creating two running server pods with pod IPs")
+			pod0 := makeServerPod(resource, "leader-visibility-pod-0", "10.244.0.10")
+			pod1 := makeServerPod(resource, "leader-visibility-pod-1", "10.244.0.11")
+
+			By("reconciling with a fake health probe reporting pod-1 as leader")
+			r := &InstanceReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+				healthProbe: func(podIP string, port int32) (schedulerHealth, error) {
+					Expect(port).To(Equal(resources.DefaultPort))
+					var h schedulerHealth
+					h.Scheduler.Candidate = true
+					h.Scheduler.IsLeader = podIP == "10.244.0.11"
+					return h, nil
+				},
+			}
+			reconcileN(ctx, r, nn, 2)
+			result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(leaderVisibilityRequeueInterval))
+
+			By("verifying the role labels and the leader's deletion-cost annotation")
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod1), pod1)).To(Succeed())
+			Expect(pod1.Labels[LabelPodRole]).To(Equal(PodRoleScheduler))
+			Expect(pod1.Annotations[AnnotationPodDeletionCost]).To(Equal(PodDeletionCostLeader))
+
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod0), pod0)).To(Succeed())
+			Expect(pod0.Labels[LabelPodRole]).To(Equal(PodRoleWeb))
+			Expect(pod0.Annotations).NotTo(HaveKey(AnnotationPodDeletionCost))
+
+			By("verifying status.schedulerLeader names the leader pod")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Status.SchedulerLeader).To(Equal("leader-visibility-pod-1"))
+
+			By("keeping the previous leader when every poll fails (no thrash)")
+			r.healthProbe = func(string, int32) (schedulerHealth, error) {
+				return schedulerHealth{}, fmt.Errorf("connection refused")
+			}
+			reconcileN(ctx, r, nn, 1)
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Status.SchedulerLeader).To(Equal("leader-visibility-pod-1"))
+
+			By("flipping gating back to ordinal clears status and strips pod markers")
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			updated.Spec.Heartbeat.SchedulerGating = "ordinal"
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Status.SchedulerLeader).To(BeEmpty())
+
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod1), pod1)).To(Succeed())
+			Expect(pod1.Labels).NotTo(HaveKey(LabelPodRole))
+			Expect(pod1.Annotations).NotTo(HaveKey(AnnotationPodDeletionCost))
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(pod0), pod0)).To(Succeed())
+			Expect(pod0.Labels).NotTo(HaveKey(LabelPodRole))
+		})
+	})
+
+	Context("When checking heartbeat scheduler gating validity", func() {
+		ctx := context.Background()
+
+		It("tracks the SchedulerGatingValid condition across spec changes", func() {
+			nn := types.NamespacedName{Name: "scheduler-gating-validity", Namespace: "default"}
+			defer func() {
+				resource := &paperclipv1alpha1.Instance{}
+				if err := k8sClient.Get(ctx, nn, resource); err == nil {
+					Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+					r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+					_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+				}
+			}()
+
+			By("creating a Deployment-workload Instance with replicas=3 and default (ordinal) gating")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:    paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Workload: "Deployment",
+					Database: paperclipv1alpha1.DatabaseSpec{
+						Mode:        "external",
+						ExternalURL: "postgres://user:pass@db.example.com:5432/paperclip",
+					},
+					ObjectStorage: &paperclipv1alpha1.ObjectStorageSpec{
+						Provider: "s3",
+						Bucket:   "paperclip-shared",
+					},
+					Storage: paperclipv1alpha1.StorageSpec{
+						Persistence: paperclipv1alpha1.PersistenceSpec{Enabled: resources.Ptr(false)},
+					},
+					Availability: paperclipv1alpha1.AvailabilitySpec{Replicas: resources.Ptr(int32(3))},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			By("verifying SchedulerGatingValid=False with reason OrdinalGatingRequiresStatefulSet")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			cond := meta.FindStatusCondition(updated.Status.Conditions, ConditionSchedulerGatingValid)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("OrdinalGatingRequiresStatefulSet"))
+			Expect(cond.Message).To(ContainSubstring("schedulerGating=lease"))
+
+			By("switching to lease gating")
+			updated.Spec.Heartbeat.SchedulerGating = "lease"
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			cond = meta.FindStatusCondition(updated.Status.Conditions, ConditionSchedulerGatingValid)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+
+			By("scaling back to one replica removes the condition")
+			updated.Spec.Availability.Replicas = resources.Ptr(int32(1))
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(meta.FindStatusCondition(updated.Status.Conditions, ConditionSchedulerGatingValid)).To(BeNil())
 		})
 	})
 })

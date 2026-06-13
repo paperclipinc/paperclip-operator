@@ -173,6 +173,10 @@ func BuildNetworkPolicy(instance *paperclipv1alpha1.Instance) *networkingv1.Netw
 		})
 	}
 
+	// User-supplied egress rules, appended verbatim (e.g. in-cluster object
+	// storage endpoints).
+	np.Spec.Egress = append(np.Spec.Egress, instance.Spec.Security.NetworkPolicy.ExtraEgress...)
+
 	return np
 }
 

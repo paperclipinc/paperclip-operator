@@ -235,6 +235,7 @@ _Appears in:_
 | `region` _string_ | Region is the S3 region. |  | Optional: \{\} <br /> |
 | `endpoint` _string_ | Endpoint is the S3-compatible endpoint URL. |  | Optional: \{\} <br /> |
 | `credentialsSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | CredentialsSecretRef references a Secret containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. |  | Optional: \{\} <br /> |
+| `forcePathStyle` _boolean_ | ForcePathStyle forces path-style S3 addressing (bucket in the URL path<br />rather than the hostname). Defaults to true when provider is "minio"<br />(virtual-hosted addressing needs wildcard DNS that in-cluster MinIO<br />deployments don't have), false otherwise. Maps to<br />PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE. |  | Optional: \{\} <br /> |
 
 
 #### BackupSpec
@@ -468,6 +469,7 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled controls whether the heartbeat scheduler runs. Defaults to true. | true | Optional: \{\} <br /> |
 | `intervalMS` _integer_ | IntervalMS sets the heartbeat interval in milliseconds. | 60000 | Optional: \{\} <br /> |
+| `schedulerGating` _string_ | SchedulerGating selects how the heartbeat scheduler is pinned to a single<br />replica when replicas > 1.<br /> - "ordinal" (default): a shell wrapper enables the scheduler only on the<br />   StatefulSet's ordinal-0 pod. Works with every app version, but has no<br />   failover and requires the StatefulSet workload.<br /> - "lease": no env manipulation - every replica participates in the app's<br />   lease-based leader election with automatic failover. Requires an app<br />   version with scheduler leases.<br /> - "auto": currently behaves like "ordinal"; will default to "lease" once<br />   the minimum supported app version includes lease leadership. | ordinal | Enum: [ordinal lease auto] <br />Optional: \{\} <br /> |
 
 
 #### ImageSpec
@@ -704,9 +706,10 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `enabled` _boolean_ | Enabled controls whether a NetworkPolicy is created. Defaults to true. | true | Optional: \{\} <br /> |
+| `enabled` _boolean_ | Enabled controls whether a NetworkPolicy is created. Defaults to true.<br />Pointer so an explicit `false` survives marshaling (a plain bool with<br />omitempty is dropped and re-defaulted to true by the API server on<br />every controller update — same bug class as PersistenceSpec.Enabled). | true | Optional: \{\} <br /> |
 | `allowIngressCIDRs` _string array_ | AllowIngressCIDRs specifies additional CIDR blocks allowed to reach the Paperclip service. |  | items:Pattern: `^([0-9]\{1,3\}\.)\{3\}[0-9]\{1,3\}/[0-9]\{1,2\}$` <br />Optional: \{\} <br /> |
 | `allowEgressCIDRs` _string array_ | AllowEgressCIDRs specifies additional CIDR blocks the pod can reach. |  | items:Pattern: `^([0-9]\{1,3\}\.)\{3\}[0-9]\{1,3\}/[0-9]\{1,2\}$` <br />Optional: \{\} <br /> |
+| `extraEgress` _[NetworkPolicyEgressRule](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#networkpolicyegressrule-v1-networking) array_ | ExtraEgress appends additional egress rules verbatim to the<br />operator-managed NetworkPolicy — e.g. to reach an in-cluster<br />object-storage endpoint (spec.objectStorage) or other services the<br />default rules don't cover. Required when networkPolicy is enabled and<br />objectStorage points at an in-cluster endpoint. |  | Optional: \{\} <br /> |
 
 
 #### NetworkingSpec
@@ -762,6 +765,7 @@ _Appears in:_
 | `region` _string_ | Region is the S3 region. |  | Optional: \{\} <br /> |
 | `endpoint` _string_ | Endpoint is the S3-compatible endpoint URL (for MinIO/R2). |  | Optional: \{\} <br /> |
 | `credentialsSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | CredentialsSecretRef references a Secret containing AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. |  | Optional: \{\} <br /> |
+| `forcePathStyle` _boolean_ | ForcePathStyle forces path-style S3 addressing (bucket in the URL path<br />rather than the hostname). Defaults to true when provider is "minio"<br />(virtual-hosted addressing needs wildcard DNS that in-cluster MinIO<br />deployments don't have), false otherwise. Maps to<br />PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE. |  | Optional: \{\} <br /> |
 
 
 #### ObservabilitySpec

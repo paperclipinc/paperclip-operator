@@ -156,6 +156,74 @@ func TestBuildStatefulSet_MultiReplicaKeepsHeartbeatGating(t *testing.T) {
 	}
 }
 
+// --- Heartbeat scheduler gating modes (spec.heartbeat.schedulerGating) ---
+// The ordinal-0 shell wrapper is only valid for the StatefulSet workload in
+// "ordinal" (or "auto", which currently resolves to ordinal) mode with more
+// than one replica. "lease" delegates leadership to the app's lease-based
+// leader election, and Deployment pods have no ordinals for the wrapper.
+
+func TestHeartbeatGatingWrapperMatrix(t *testing.T) {
+	tests := []struct {
+		name        string
+		gating      string
+		deployment  bool
+		replicas    int32
+		wantWrapper bool
+	}{
+		{"ordinal StatefulSet 3 replicas", "ordinal", false, 3, true},
+		{"ordinal Deployment 3 replicas", "ordinal", true, 3, false},
+		{"lease StatefulSet 3 replicas", "lease", false, 3, false},
+		{"lease Deployment 3 replicas", "lease", true, 3, false},
+		{"auto StatefulSet 3 replicas", "auto", false, 3, true},
+		{"ordinal StatefulSet 1 replica", "ordinal", false, 1, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inst := newTestInstance("p")
+			if tt.deployment {
+				inst = statelessTestInstance()
+			}
+			inst.Spec.Heartbeat.Enabled = true
+			inst.Spec.Heartbeat.SchedulerGating = tt.gating
+			inst.Spec.Availability.Replicas = Ptr(tt.replicas)
+
+			var c corev1.Container
+			if tt.deployment {
+				c = BuildDeployment(inst, nil).Spec.Template.Spec.Containers[0]
+			} else {
+				c = BuildStatefulSet(inst, nil).Spec.Template.Spec.Containers[0]
+			}
+
+			joined := strings.Join(c.Args, " ")
+			gotWrapper := strings.Contains(joined, "HEARTBEAT_SCHEDULER_ENABLED")
+			if gotWrapper != tt.wantWrapper {
+				t.Errorf("wrapper presence = %t, want %t (args %q)", gotWrapper, tt.wantWrapper, joined)
+			}
+		})
+	}
+}
+
+func TestSchedulerGatingMode(t *testing.T) {
+	tests := []struct {
+		gating string
+		want   string
+	}{
+		{"", "ordinal"},
+		{"ordinal", "ordinal"},
+		{"auto", "ordinal"},
+		{"lease", "lease"},
+	}
+
+	for _, tt := range tests {
+		inst := newTestInstance("p")
+		inst.Spec.Heartbeat.SchedulerGating = tt.gating
+		if got := SchedulerGatingMode(inst); got != tt.want {
+			t.Errorf("SchedulerGatingMode(schedulerGating=%q) = %q, want %q", tt.gating, got, tt.want)
+		}
+	}
+}
+
 // --- OTEL instrumentation gating ---
 // The operator injects NODE_OPTIONS=--import ./server/dist/instrumentation.js for
 // OTEL. That file only exists in the app image when instrumentation is built in,

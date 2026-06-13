@@ -21,7 +21,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -71,6 +73,12 @@ const (
 	// storage) are satisfied. Advisory: it does not gate the Ready aggregate
 	// and is removed entirely while replicas <= 1.
 	ConditionMultiReplicaPreconditions = "MultiReplicaPreconditions"
+	// ConditionSchedulerGatingValid indicates whether the resolved heartbeat
+	// scheduler gating mode is compatible with the server workload at
+	// replicas > 1 (ordinal gating needs StatefulSet ordinals). Advisory: it
+	// does not gate the Ready aggregate and is removed entirely while
+	// replicas <= 1.
+	ConditionSchedulerGatingValid = "SchedulerGatingValid"
 	// ConditionServiceReady indicates the Service is ready.
 	ConditionServiceReady = "ServiceReady"
 	// ConditionNetworkPolicyReady indicates the NetworkPolicy is reconciled.
@@ -106,6 +114,17 @@ type InstanceReconciler struct {
 	Scheme         *runtime.Scheme
 	Recorder       record.EventRecorder
 	RegistryClient *registry.Client
+
+	// healthProbe fetches the scheduler block of a server pod's
+	// unauthenticated /api/health response. Nil selects the real HTTP
+	// implementation (httpHealthProbe); envtest injects a fake so leader
+	// discovery needs no pod network.
+	healthProbe func(podIP string, port int32) (schedulerHealth, error)
+
+	// healthClient is the shared short-timeout HTTP client used by
+	// httpHealthProbe, constructed once via healthClientOnce.
+	healthClient     *http.Client
+	healthClientOnce sync.Once
 }
 
 // +kubebuilder:rbac:groups=paperclip.inc,resources=instances,verbs=get;list;watch;create;update;patch;delete
@@ -128,7 +147,7 @@ type InstanceReconciler struct {
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs;jobs/status,verbs=get;list;watch;create;delete
 // +kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
@@ -289,6 +308,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// 3.8. Advisory multi-replica warnings (conditions/events only, never fatal)
 	r.reconcileMultiReplicaPreconditions(instance)
+	r.reconcileSchedulerGatingValidity(instance)
 	r.warnPDBDrainSafety(instance)
 
 	// 4. Server workload (StatefulSet or Deployment, per spec.workload)
@@ -316,7 +336,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// 7. NetworkPolicy (optional)
-	if instance.Spec.Security.NetworkPolicy.Enabled {
+	if resources.NetworkPolicyEnabled(instance) {
 		if err := r.reconcileNetworkPolicy(ctx, instance); err != nil {
 			return r.handleError(ctx, instance, "NetworkPolicy", err)
 		}
@@ -367,6 +387,12 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.handleError(ctx, instance, "GrafanaDashboards", err)
 	}
 
+	// 14. Scheduler leader visibility (lease gating at replicas > 1 only):
+	// poll the pods' /api/health to discover the lease holder, label pods with
+	// their role, and record status.SchedulerLeader (persisted by updateStatus
+	// below). Never fatal; returns the polling requeue interval when active.
+	leaderVisibilityRequeue := r.reconcileLeaderVisibility(ctx, instance)
+
 	// Update status
 	if err := r.updateStatus(ctx, instance); err != nil {
 		return ctrl.Result{}, err
@@ -382,6 +408,9 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	requeueAfter := 5 * time.Minute
 	if autoUpdateRequeue.RequeueAfter > 0 && autoUpdateRequeue.RequeueAfter < requeueAfter {
 		requeueAfter = autoUpdateRequeue.RequeueAfter
+	}
+	if leaderVisibilityRequeue.RequeueAfter > 0 && leaderVisibilityRequeue.RequeueAfter < requeueAfter {
+		requeueAfter = leaderVisibilityRequeue.RequeueAfter
 	}
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
@@ -906,6 +935,48 @@ func (r *InstanceReconciler) reconcileMultiReplicaPreconditions(instance *paperc
 	if changed && r.Recorder != nil {
 		r.Recorder.Event(instance, corev1.EventTypeWarning, "MultiReplicaPreconditionsNotMet", message)
 	}
+}
+
+// reconcileSchedulerGatingValidity maintains the advisory SchedulerGatingValid
+// condition. Ordinal gating pins the heartbeat scheduler to the StatefulSet's
+// ordinal-0 pod via a shell wrapper; Deployment pods have no stable ordinals,
+// so the wrapper cannot be applied and every replica runs the scheduler.
+// While replicas <= 1 the condition is removed entirely so single-replica
+// instances carry no stale noise.
+func (r *InstanceReconciler) reconcileSchedulerGatingValidity(instance *paperclipv1alpha1.Instance) {
+	replicas := resources.EffectiveReplicas(instance)
+	if replicas <= 1 {
+		meta.RemoveStatusCondition(&instance.Status.Conditions, ConditionSchedulerGatingValid)
+		return
+	}
+
+	if resources.EffectiveWorkloadIsDeployment(instance) && resources.SchedulerGatingMode(instance) == "ordinal" {
+		message := fmt.Sprintf("spec.heartbeat.schedulerGating resolves to ordinal but the server workload is a "+
+			"Deployment with %d replicas: Deployment pods have no stable ordinals, so the ordinal-0 shell wrapper "+
+			"is not applied. Set spec.heartbeat.schedulerGating=lease (requires an app version with lease-based "+
+			"scheduler leadership) - until then every replica runs the heartbeat scheduler.", replicas)
+		changed := meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionSchedulerGatingValid,
+			Status:             metav1.ConditionFalse,
+			Reason:             "OrdinalGatingRequiresStatefulSet",
+			Message:            message,
+			ObservedGeneration: instance.Generation,
+		})
+		// SetStatusCondition reports a change only when status/reason/message
+		// transition, so the Warning fires once per transition, not per reconcile.
+		if changed && r.Recorder != nil {
+			r.Recorder.Event(instance, corev1.EventTypeWarning, "OrdinalGatingRequiresStatefulSet", message)
+		}
+		return
+	}
+
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionSchedulerGatingValid,
+		Status:             metav1.ConditionTrue,
+		Reason:             "SchedulerGatingValid",
+		Message:            fmt.Sprintf("Scheduler gating mode %q is compatible with the server workload", resources.SchedulerGatingMode(instance)),
+		ObservedGeneration: instance.Generation,
+	})
 }
 
 // warnPDBDrainSafety emits an advisory event when the PDB floor meets or
@@ -1465,12 +1536,8 @@ func (r *InstanceReconciler) setEndpoint(instance *paperclipv1alpha1.Instance) {
 		instance.Status.Endpoint = instance.Spec.Deployment.PublicURL
 		return
 	}
-	port := int32(3100)
-	if instance.Spec.Networking.Service.Port > 0 {
-		port = instance.Spec.Networking.Service.Port
-	}
 	instance.Status.Endpoint = fmt.Sprintf("http://%s.%s.svc.cluster.local:%d",
-		resources.ServiceName(instance), instance.Namespace, port)
+		resources.ServiceName(instance), instance.Namespace, resources.ServerPort(instance))
 }
 
 // allSubConditionsReady returns true when every condition except ConditionReady
@@ -1484,7 +1551,8 @@ func allSubConditionsReady(conditions []metav1.Condition) bool {
 		}
 		// Advisory conditions warn about spec combinations; they must not gate
 		// readiness of the managed resources themselves.
-		if cond.Type == ConditionWorkloadProfileValid || cond.Type == ConditionMultiReplicaPreconditions {
+		if cond.Type == ConditionWorkloadProfileValid || cond.Type == ConditionMultiReplicaPreconditions ||
+			cond.Type == ConditionSchedulerGatingValid {
 			continue
 		}
 		if cond.Status != metav1.ConditionTrue {

@@ -530,13 +530,14 @@ spec:
 
 ### Heartbeat Scheduler
 
-Paperclip runs a heartbeat scheduler for periodic agent tasks. In multi-replica deployments, only pod-0 (ordinal 0) runs the scheduler to prevent duplicate execution:
+Paperclip runs a heartbeat scheduler for periodic agent tasks. In multi-replica deployments only one replica may run it; by default the operator pins it to pod-0 (ordinal 0), and `schedulerGating` selects lease-based failover instead -- see [Scheduler gating and failover](#scheduler-gating-and-failover):
 
 ```yaml
 spec:
   heartbeat:
-    enabled: true        # default: true
-    intervalMS: 60000    # default: 60000 (1 minute)
+    enabled: true             # default: true
+    intervalMS: 60000         # default: 60000 (1 minute)
+    schedulerGating: ordinal  # default; "lease" enables automatic failover
 ```
 
 ### Persistent Storage
@@ -636,6 +637,46 @@ scaleTargetRef:
   kind: Instance
   name: my-paperclip
 ```
+
+#### Scheduler gating and failover
+
+The heartbeat scheduler must run on exactly one replica. `spec.heartbeat.schedulerGating` selects how that is enforced at `replicas > 1`:
+
+```yaml
+spec:
+  heartbeat:
+    schedulerGating: lease   # "ordinal" (default), "lease", or "auto"
+```
+
+| Mode | How it works | Failover |
+|------|--------------|----------|
+| `ordinal` (default) | The operator wraps the container entrypoint so only pod-0 of the StatefulSet sets `HEARTBEAT_SCHEDULER_ENABLED=true`. StatefulSet only -- Deployment pods have no stable ordinals, so the wrapper is skipped and the operator reports `SchedulerGatingValid: False` | None: while pod-0 is down, no scheduler runs |
+| `lease` | The operator sets no scheduler env at all and delegates to the app's lease-based leader election (requires an app version with scheduler leases, paperclipai/paperclip#7995) | Automatic: a surviving replica takes over the lease |
+| `auto` | Currently resolves to `ordinal`; will flip to `lease` once the minimum supported app version ships lease leadership | Follows the resolved mode |
+
+**Version skew.** What actually runs for each combination of operator gating mode and app image:
+
+| Operator gating | App without leases | App with leases (>= the #7995 release) |
+|-----------------|--------------------|----------------------------------------|
+| `ordinal` (default) | pod-0 pinned, no failover | pod-0 pinned (the wrapper wins: only pod-0 is a lease candidate) |
+| `lease` | ALL replicas run the scheduler -- unsafe, do not use | automatic failover |
+
+**Migrating from ordinal to lease.** Order matters: setting `lease` against an app image without lease support removes the only gate and every replica runs the scheduler.
+
+1. Upgrade the app image to a version that includes lease-based scheduler leadership (paperclipai/paperclip#7995).
+2. Set `spec.heartbeat.schedulerGating: lease`.
+3. Optionally remove any manual `HEARTBEAT_SCHEDULER_ENABLED` pinning you carry in `spec.env`.
+
+**Leader observability.** While lease gating is active at `replicas > 1`, the operator polls each server pod's unauthenticated `/api/health` and surfaces the lease holder:
+
+- `status.schedulerLeader` records the leader pod name:
+
+  ```bash
+  kubectl get instance my-paperclip -o jsonpath='{.status.schedulerLeader}'
+  ```
+
+- server pods are labeled `paperclip.inc/role=scheduler` (lease holder) or `paperclip.inc/role=web`
+- on Deployment workloads the leader pod also carries the `controller.kubernetes.io/pod-deletion-cost` annotation, so ReplicaSet scale-in prefers removing web replicas and avoids needless failovers
 
 #### Horizontal Pod Autoscaler
 

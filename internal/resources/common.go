@@ -98,11 +98,31 @@ func UseDeploymentWorkload(instance *paperclipv1alpha1.Instance) bool {
 
 // PersistenceEnabled reports whether the data PVC is enabled (defaults to
 // true when unset).
+// NetworkPolicyEnabled resolves the *bool (nil = default true).
+func NetworkPolicyEnabled(instance *paperclipv1alpha1.Instance) bool {
+	if instance.Spec.Security.NetworkPolicy.Enabled == nil {
+		return true
+	}
+	return *instance.Spec.Security.NetworkPolicy.Enabled
+}
+
 func PersistenceEnabled(instance *paperclipv1alpha1.Instance) bool {
 	if instance.Spec.Storage.Persistence.Enabled == nil {
 		return true
 	}
 	return *instance.Spec.Storage.Persistence.Enabled
+}
+
+// SchedulerGatingMode resolves spec.heartbeat.schedulerGating to the mode the
+// operator actually applies: "ordinal" or "lease". "auto" currently resolves
+// to "ordinal" (it will flip to "lease" once the minimum supported app version
+// includes lease-based scheduler leadership), and an empty value defaults to
+// "ordinal".
+func SchedulerGatingMode(instance *paperclipv1alpha1.Instance) string {
+	if instance.Spec.Heartbeat.SchedulerGating == "lease" {
+		return "lease"
+	}
+	return "ordinal"
 }
 
 // EffectiveWorkloadIsDeployment reports whether the server workload the
@@ -113,6 +133,17 @@ func PersistenceEnabled(instance *paperclipv1alpha1.Instance) bool {
 // HPA scaleTargetRef must follow that fallback.
 func EffectiveWorkloadIsDeployment(instance *paperclipv1alpha1.Instance) bool {
 	return UseDeploymentWorkload(instance) && !PersistenceEnabled(instance)
+}
+
+// ServerPort returns the Paperclip server container port: the configured
+// service port (spec.networking.service.port) or the default. It is the port
+// the container listens on, used by probes and by the operator's own
+// /api/health polling for scheduler leader discovery.
+func ServerPort(instance *paperclipv1alpha1.Instance) int32 {
+	if instance.Spec.Networking.Service.Port > 0 {
+		return instance.Spec.Networking.Service.Port
+	}
+	return DefaultPort
 }
 
 // UseTCPProbes returns true when probes should use TCP instead of HTTP.
