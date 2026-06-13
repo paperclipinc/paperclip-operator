@@ -1589,8 +1589,10 @@ spec:
                   replicas:
                     default: 1
                     description: |-
-                      Replicas is the desired number of Paperclip server pods.
-                      Ignored when autoScaling is enabled (the HPA manages replicas).
+                      Replicas is the desired number of Paperclip server pods. This field is
+                      also the target of the scale subresource, so `kubectl scale` writes it.
+                      Ignored when autoScaling is enabled (the HPA manages replicas), which
+                      makes `kubectl scale` a no-op while the HPA is active.
                     format: int32
                     minimum: 1
                     type: integer
@@ -8269,6 +8271,23 @@ spec:
                         type: object
                     type: object
                 type: object
+              workload:
+                default: StatefulSet
+                description: |-
+                  Workload selects the server workload kind.
+                   - "StatefulSet" (default): per-instance PVC, stable identity. Required for
+                     embedded database mode and for persistence-backed instances.
+                   - "Deployment": stateless pods (ephemeral scratch); intended for
+                     database.mode external/managed with objectStorage when replicas > 1.
+                     Enables surge rollouts and avoids AZ-pinned per-ordinal PVCs under
+                     autoscaling. Requires storage.persistence.enabled=false.
+                   - "auto": Deployment when persistence is disabled AND database mode is
+                     not embedded; StatefulSet otherwise.
+                enum:
+                - StatefulSet
+                - Deployment
+                - auto
+                type: string
             type: object
           status:
             description: InstanceStatus defines the observed state of Instance.
@@ -8381,6 +8400,8 @@ spec:
                     type: string
                   databaseStatefulSet:
                     type: string
+                  deployment:
+                    type: string
                   grafanaDashboardInstance:
                     type: string
                   grafanaDashboardOperator:
@@ -8421,6 +8442,11 @@ spec:
                 - Updating
                 - Suspended
                 type: string
+              replicas:
+                description: Replicas is the observed replica count of the active
+                  server workload (scale subresource).
+                format: int32
+                type: integer
               restore:
                 description: Restore tracks the state of the latest restore operation.
                 properties:
@@ -8432,10 +8458,18 @@ spec:
                     description: Result is the result of the restore.
                     type: string
                 type: object
+              selector:
+                description: Selector is the label selector for the scale subresource
+                  (string form).
+                type: string
             type: object
         type: object
     served: true
     storage: true
     subresources:
+      scale:
+        labelSelectorPath: .status.selector
+        specReplicasPath: .spec.availability.replicas
+        statusReplicasPath: .status.replicas
       status: {}
 {{- end }}

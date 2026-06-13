@@ -21,6 +21,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -59,6 +60,17 @@ const (
 	ConditionDatabaseReady = "DatabaseReady"
 	// ConditionStatefulSetReady indicates the StatefulSet is ready.
 	ConditionStatefulSetReady = "StatefulSetReady"
+	// ConditionDeploymentReady indicates the Deployment is ready (when
+	// spec.workload selects the Deployment server workload).
+	ConditionDeploymentReady = "DeploymentReady"
+	// ConditionWorkloadProfileValid indicates spec.workload is compatible with
+	// the rest of the spec. Advisory: it does not gate the Ready aggregate.
+	ConditionWorkloadProfileValid = "WorkloadProfileValid"
+	// ConditionMultiReplicaPreconditions indicates whether the prerequisites
+	// for running more than one replica (shared database, shared object
+	// storage) are satisfied. Advisory: it does not gate the Ready aggregate
+	// and is removed entirely while replicas <= 1.
+	ConditionMultiReplicaPreconditions = "MultiReplicaPreconditions"
 	// ConditionServiceReady indicates the Service is ready.
 	ConditionServiceReady = "ServiceReady"
 	// ConditionNetworkPolicyReady indicates the NetworkPolicy is reconciled.
@@ -100,6 +112,7 @@ type InstanceReconciler struct {
 // +kubebuilder:rbac:groups=paperclip.inc,resources=instances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=paperclip.inc,resources=instances/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
@@ -248,7 +261,7 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// 3. PVC (if persistence enabled)
-	if instance.Spec.Storage.Persistence.Enabled {
+	if resources.PersistenceEnabled(instance) {
 		if err := r.reconcilePVC(ctx, instance); err != nil {
 			return r.handleError(ctx, instance, "PVC", err)
 		}
@@ -274,9 +287,13 @@ func (r *InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	// 4. StatefulSet
-	if err := r.reconcileStatefulSet(ctx, instance, extraPodAnnotations); err != nil {
-		return r.handleError(ctx, instance, "StatefulSet", err)
+	// 3.8. Advisory multi-replica warnings (conditions/events only, never fatal)
+	r.reconcileMultiReplicaPreconditions(instance)
+	r.warnPDBDrainSafety(instance)
+
+	// 4. Server workload (StatefulSet or Deployment, per spec.workload)
+	if err := r.reconcileServerWorkload(ctx, instance, extraPodAnnotations); err != nil {
+		return r.handleError(ctx, instance, "Workload", err)
 	}
 
 	// 5. Service
@@ -708,6 +725,212 @@ func (r *InstanceReconciler) reconcilePVC(ctx context.Context, instance *papercl
 	return nil
 }
 
+// reconcileServerWorkload reconciles the Paperclip server as either a
+// StatefulSet or a Deployment depending on spec.workload, deletes the stale
+// counterpart workload after a kind change (both kinds share one name and
+// label selector by construction), and maintains the advisory
+// WorkloadProfileValid condition.
+func (r *InstanceReconciler) reconcileServerWorkload(ctx context.Context, instance *paperclipv1alpha1.Instance, extraPodAnnotations map[string]string) error {
+	// PVC-safety override: spec.workload=Deployment with persistence enabled
+	// would attach the ReadWriteOnce data PVC to multiple, surging Deployment
+	// pods. Keep the StatefulSet instead and report the profile as invalid.
+	// resources.EffectiveWorkloadIsDeployment applies the same override so the
+	// HPA scaleTargetRef always follows the workload actually reconciled here.
+	if instance.Spec.Workload == "Deployment" && resources.PersistenceEnabled(instance) {
+		message := "spec.workload is Deployment but spec.storage.persistence.enabled is true: " +
+			"persistence requires StatefulSet (the data PVC cannot be shared by surging Deployment pods), " +
+			"so the operator keeps the StatefulSet. To run as a Deployment, set " +
+			"spec.storage.persistence.enabled=false and configure spec.objectStorage for shared file state."
+		changed := meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionWorkloadProfileValid,
+			Status:             metav1.ConditionFalse,
+			Reason:             "PersistenceRequiresStatefulSet",
+			Message:            message,
+			ObservedGeneration: instance.Generation,
+		})
+		if changed && r.Recorder != nil {
+			r.Recorder.Event(instance, corev1.EventTypeWarning, "PersistenceRequiresStatefulSet", message)
+		}
+	} else {
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionWorkloadProfileValid,
+			Status:             metav1.ConditionTrue,
+			Reason:             "WorkloadProfileValid",
+			Message:            "spec.workload is compatible with the instance spec",
+			ObservedGeneration: instance.Generation,
+		})
+	}
+
+	if resources.EffectiveWorkloadIsDeployment(instance) {
+		// Drop the counterpart's readiness condition so a stale
+		// StatefulSetReady=False can never gate the Ready aggregate.
+		meta.RemoveStatusCondition(&instance.Status.Conditions, ConditionStatefulSetReady)
+		if err := r.reconcileDeployment(ctx, instance, extraPodAnnotations); err != nil {
+			return err
+		}
+		return r.deleteStaleWorkload(ctx, instance, &appsv1.StatefulSet{}, "StatefulSet", "Deployment")
+	}
+
+	meta.RemoveStatusCondition(&instance.Status.Conditions, ConditionDeploymentReady)
+	if err := r.reconcileStatefulSet(ctx, instance, extraPodAnnotations); err != nil {
+		return err
+	}
+	return r.deleteStaleWorkload(ctx, instance, &appsv1.Deployment{}, "Deployment", "StatefulSet")
+}
+
+// deleteStaleWorkload deletes the previous server workload of the given kind
+// after a spec.workload kind change. StatefulSet and Deployment names are
+// identical by construction, so the stale object lives under the same key.
+// A NotFound result means no migration happened and is ignored.
+func (r *InstanceReconciler) deleteStaleWorkload(ctx context.Context, instance *paperclipv1alpha1.Instance, stale client.Object, staleKind, activeKind string) error {
+	stale.SetName(resources.StatefulSetName(instance))
+	stale.SetNamespace(instance.Namespace)
+	err := r.Delete(ctx, stale)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("deleting stale %s after workload kind change: %w", staleKind, err)
+	}
+
+	logf.FromContext(ctx).Info("Deleted stale server workload after kind change",
+		"staleKind", staleKind, "activeKind", activeKind, "name", stale.GetName())
+	if r.Recorder != nil {
+		r.Recorder.Eventf(instance, corev1.EventTypeNormal, "WorkloadKindMigrated",
+			"Server workload migrated from %s to %s: deleted stale %s %s/%s",
+			staleKind, activeKind, staleKind, instance.Namespace, stale.GetName())
+	}
+	return nil
+}
+
+// reconcileDeployment mirrors reconcileStatefulSet for the Deployment server
+// workload, including HPA replica preservation and suspend handling.
+func (r *InstanceReconciler) reconcileDeployment(ctx context.Context, instance *paperclipv1alpha1.Instance, extraPodAnnotations map[string]string) error {
+	desired := resources.BuildDeployment(instance, extraPodAnnotations)
+	obj := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      desired.Name,
+			Namespace: desired.Namespace,
+		},
+	}
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
+		obj.Labels = desired.Labels
+		// When HPA is enabled, preserve the current replica count to avoid
+		// fighting the autoscaler on every reconcile. Suspended takes priority:
+		// scale-to-zero must win over the autoscaler's last-known count.
+		if as := instance.Spec.Availability.AutoScaling; as != nil && as.Enabled && obj.Spec.Replicas != nil && !instance.Spec.Suspended {
+			desired.Spec.Replicas = obj.Spec.Replicas
+		}
+		obj.Spec = desired.Spec
+		return controllerutil.SetControllerReference(instance, obj, r.Scheme)
+	})
+	if err != nil {
+		return fmt.Errorf("reconciling Deployment: %w", err)
+	}
+
+	// Track the Deployment and clear the statefulSet entry so it does not
+	// point at the deleted workload after a kind migration.
+	instance.Status.ManagedResources.Deployment = obj.Name
+	instance.Status.ManagedResources.StatefulSet = ""
+
+	// Update Deployment condition (mirrors the StatefulSetReady semantics)
+	status := metav1.ConditionFalse
+	reason := "DeploymentNotReady"
+	message := "Deployment has no ready replicas"
+	if instance.Spec.Suspended {
+		// Suspended: desired is 0 replicas. Ready once all pods are terminated.
+		if obj.Status.Replicas == 0 {
+			status = metav1.ConditionTrue
+			reason = "DeploymentSuspended"
+			message = "Deployment scaled to zero (instance suspended)"
+		} else {
+			reason = "DeploymentSuspending"
+			message = fmt.Sprintf("Deployment draining %d replicas (instance suspended)", obj.Status.Replicas)
+		}
+	} else if obj.Status.ReadyReplicas > 0 {
+		status = metav1.ConditionTrue
+		reason = "DeploymentReady"
+		message = fmt.Sprintf("Deployment has %d ready replicas", obj.Status.ReadyReplicas)
+	}
+	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionDeploymentReady,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: instance.Generation,
+	})
+
+	return nil
+}
+
+// reconcileMultiReplicaPreconditions maintains the advisory
+// MultiReplicaPreconditions condition. While replicas <= 1 the condition is
+// removed entirely so single-replica instances carry no stale noise.
+func (r *InstanceReconciler) reconcileMultiReplicaPreconditions(instance *paperclipv1alpha1.Instance) {
+	replicas := resources.EffectiveReplicas(instance)
+	if replicas <= 1 {
+		meta.RemoveStatusCondition(&instance.Status.Conditions, ConditionMultiReplicaPreconditions)
+		return
+	}
+
+	var missing []string
+	if instance.Spec.Database.Mode == "embedded" {
+		missing = append(missing, "spec.database.mode is embedded (the embedded PGlite database cannot be shared between replicas; use mode external or managed)")
+	}
+	if instance.Spec.ObjectStorage == nil {
+		missing = append(missing, "spec.objectStorage is not configured (S3-compatible object storage is required for shared file state across replicas)")
+	}
+
+	if len(missing) == 0 {
+		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+			Type:               ConditionMultiReplicaPreconditions,
+			Status:             metav1.ConditionTrue,
+			Reason:             "PreconditionsMet",
+			Message:            fmt.Sprintf("Multi-replica preconditions are met for %d replicas", replicas),
+			ObservedGeneration: instance.Generation,
+		})
+		return
+	}
+
+	message := fmt.Sprintf("Instance requests %d replicas but: %s", replicas, strings.Join(missing, "; "))
+	changed := meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+		Type:               ConditionMultiReplicaPreconditions,
+		Status:             metav1.ConditionFalse,
+		Reason:             "PreconditionsNotMet",
+		Message:            message,
+		ObservedGeneration: instance.Generation,
+	})
+	// SetStatusCondition reports a change only when status/reason/message
+	// transition, so the Warning fires once per transition, not per reconcile.
+	if changed && r.Recorder != nil {
+		r.Recorder.Event(instance, corev1.EventTypeWarning, "MultiReplicaPreconditionsNotMet", message)
+	}
+}
+
+// warnPDBDrainSafety emits an advisory event when the PDB floor meets or
+// exceeds the autoscaler floor: at minimum scale every pod is then required
+// by the PDB, disruptionsAllowed is 0, and node drains stall. Event only, no
+// condition.
+func (r *InstanceReconciler) warnPDBDrainSafety(instance *paperclipv1alpha1.Instance) {
+	if r.Recorder == nil {
+		return
+	}
+	pdb := instance.Spec.Availability.PodDisruptionBudget
+	as := instance.Spec.Availability.AutoScaling
+	if pdb == nil || !pdb.Enabled || pdb.MinAvailable == nil {
+		return
+	}
+	if as == nil || !as.Enabled || as.MinReplicas == nil {
+		return
+	}
+	if *pdb.MinAvailable >= *as.MinReplicas {
+		r.Recorder.Eventf(instance, corev1.EventTypeWarning, "PDBMayBlockDrains",
+			"podDisruptionBudget.minAvailable=%d >= autoScaling.minReplicas=%d: at minimum scale the PDB allows zero disruptions (disruptionsAllowed=0) and node drains may block; lower minAvailable or raise minReplicas",
+			*pdb.MinAvailable, *as.MinReplicas)
+	}
+}
+
 func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance *paperclipv1alpha1.Instance, extraPodAnnotations map[string]string) error {
 	desired := resources.BuildStatefulSet(instance, extraPodAnnotations)
 	obj := &appsv1.StatefulSet{
@@ -732,7 +955,10 @@ func (r *InstanceReconciler) reconcileStatefulSet(ctx context.Context, instance 
 		return fmt.Errorf("reconciling StatefulSet: %w", err)
 	}
 
+	// Track the StatefulSet and clear the deployment entry so it does not
+	// point at the deleted workload after a kind migration.
 	instance.Status.ManagedResources.StatefulSet = obj.Name
+	instance.Status.ManagedResources.Deployment = ""
 
 	// Update StatefulSet condition
 	status := metav1.ConditionFalse
@@ -1154,6 +1380,7 @@ func (r *InstanceReconciler) reconcileGrafanaDashboards(ctx context.Context, ins
 
 func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *paperclipv1alpha1.Instance) error {
 	instance.Status.ObservedGeneration = instance.Generation
+	r.updateScaleStatus(ctx, instance)
 
 	// Suspended: override phase and readiness. The workload is scaled to zero
 	// but all non-runtime resources remain managed.
@@ -1208,6 +1435,30 @@ func (r *InstanceReconciler) updateStatus(ctx context.Context, instance *papercl
 	return r.Status().Update(ctx, instance)
 }
 
+// updateScaleStatus populates the scale-subresource status fields
+// (status.replicas, status.selector) from the active server workload. The
+// Deployment and StatefulSet share name and selector by construction, so the
+// selector string is identical across workload kinds. A missing workload
+// (e.g. before the first reconcile completes) leaves the fields unchanged.
+func (r *InstanceReconciler) updateScaleStatus(ctx context.Context, instance *paperclipv1alpha1.Instance) {
+	key := client.ObjectKey{Namespace: instance.Namespace, Name: resources.StatefulSetName(instance)}
+	if resources.EffectiveWorkloadIsDeployment(instance) {
+		deploy := &appsv1.Deployment{}
+		if err := r.Get(ctx, key, deploy); err != nil {
+			return
+		}
+		instance.Status.Replicas = deploy.Status.Replicas
+		instance.Status.Selector = metav1.FormatLabelSelector(deploy.Spec.Selector)
+		return
+	}
+	sts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, key, sts); err != nil {
+		return
+	}
+	instance.Status.Replicas = sts.Status.Replicas
+	instance.Status.Selector = metav1.FormatLabelSelector(sts.Spec.Selector)
+}
+
 // setEndpoint records the primary service endpoint URL in status.
 func (r *InstanceReconciler) setEndpoint(instance *paperclipv1alpha1.Instance) {
 	if instance.Spec.Deployment.PublicURL != "" {
@@ -1229,6 +1480,11 @@ func (r *InstanceReconciler) setEndpoint(instance *paperclipv1alpha1.Instance) {
 func allSubConditionsReady(conditions []metav1.Condition) bool {
 	for _, cond := range conditions {
 		if cond.Type == ConditionReady || cond.Type == ConditionSuspended {
+			continue
+		}
+		// Advisory conditions warn about spec combinations; they must not gate
+		// readiness of the managed resources themselves.
+		if cond.Type == ConditionWorkloadProfileValid || cond.Type == ConditionMultiReplicaPreconditions {
 			continue
 		}
 		if cond.Status != metav1.ConditionTrue {
@@ -1367,6 +1623,7 @@ func (r *InstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&paperclipv1alpha1.Instance{}).
 		Owns(&appsv1.StatefulSet{}).
+		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.PersistentVolumeClaim{}).

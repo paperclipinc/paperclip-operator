@@ -124,6 +124,20 @@ type InstanceSpec struct {
 	// +optional
 	Availability AvailabilitySpec `json:"availability,omitempty"`
 
+	// Workload selects the server workload kind.
+	//  - "StatefulSet" (default): per-instance PVC, stable identity. Required for
+	//    embedded database mode and for persistence-backed instances.
+	//  - "Deployment": stateless pods (ephemeral scratch); intended for
+	//    database.mode external/managed with objectStorage when replicas > 1.
+	//    Enables surge rollouts and avoids AZ-pinned per-ordinal PVCs under
+	//    autoscaling. Requires storage.persistence.enabled=false.
+	//  - "auto": Deployment when persistence is disabled AND database mode is
+	//    not embedded; StatefulSet otherwise.
+	// +kubebuilder:validation:Enum=StatefulSet;Deployment;auto
+	// +kubebuilder:default=StatefulSet
+	// +optional
+	Workload string `json:"workload,omitempty"`
+
 	// Probes configures liveness, readiness, and startup probes.
 	// +optional
 	Probes ProbesSpec `json:"probes,omitempty"`
@@ -445,10 +459,14 @@ type StorageSpec struct {
 
 // PersistenceSpec configures PVC settings.
 type PersistenceSpec struct {
+	// A pointer is required for round-tripping: with a plain bool plus
+	// omitempty, enabled=false is dropped on marshal and the API server
+	// re-defaults it to true on every controller update of the CR.
+
 	// Enabled controls whether a PVC is created. Defaults to true.
 	// +kubebuilder:default=true
 	// +optional
-	Enabled bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
 
 	// Size is the PVC storage size.
 	// +kubebuilder:default="5Gi"
@@ -1065,8 +1083,10 @@ type LoggingSpec struct {
 
 // AvailabilitySpec configures scaling and pod scheduling.
 type AvailabilitySpec struct {
-	// Replicas is the desired number of Paperclip server pods.
-	// Ignored when autoScaling is enabled (the HPA manages replicas).
+	// Replicas is the desired number of Paperclip server pods. This field is
+	// also the target of the scale subresource, so `kubectl scale` writes it.
+	// Ignored when autoScaling is enabled (the HPA manages replicas), which
+	// makes `kubectl scale` a no-op while the HPA is active.
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	// +optional
@@ -1298,12 +1318,22 @@ type InstanceStatus struct {
 	// AutoUpdate tracks the state of automatic image update checks.
 	// +optional
 	AutoUpdate *AutoUpdateStatus `json:"autoUpdate,omitempty"`
+
+	// Replicas is the observed replica count of the active server workload (scale subresource).
+	// +optional
+	Replicas int32 `json:"replicas,omitempty"`
+
+	// Selector is the label selector for the scale subresource (string form).
+	// +optional
+	Selector string `json:"selector,omitempty"`
 }
 
 // ManagedResources tracks the names of managed Kubernetes resources.
 type ManagedResources struct {
 	// +optional
 	StatefulSet string `json:"statefulSet,omitempty"`
+	// +optional
+	Deployment string `json:"deployment,omitempty"`
 	// +optional
 	Service string `json:"service,omitempty"`
 	// +optional
@@ -1375,6 +1405,7 @@ type AutoUpdateStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:subresource:scale:specpath=.spec.availability.replicas,statuspath=.status.replicas,selectorpath=.status.selector
 // +kubebuilder:resource:shortName=pci
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Endpoint",type=string,JSONPath=`.status.endpoint`

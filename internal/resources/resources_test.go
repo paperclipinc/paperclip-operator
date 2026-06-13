@@ -34,7 +34,7 @@ func newTestInstance(name string) *paperclipv1alpha1.Instance {
 			},
 			Storage: paperclipv1alpha1.StorageSpec{
 				Persistence: paperclipv1alpha1.PersistenceSpec{
-					Enabled: true,
+					Enabled: Ptr(true),
 					Size:    resource.MustParse("5Gi"),
 				},
 			},
@@ -1375,17 +1375,17 @@ func TestBuildStatefulSetSuspended(t *testing.T) {
 	}
 }
 
-func TestStatefulSetReplicas(t *testing.T) {
+func TestWorkloadReplicas(t *testing.T) {
 	instance := newTestInstance("repl")
-	if got := StatefulSetReplicas(instance); got != 1 {
+	if got := WorkloadReplicas(instance); got != 1 {
 		t.Errorf("expected default 1 replica, got %d", got)
 	}
 	instance.Spec.Availability.Replicas = Ptr(int32(5))
-	if got := StatefulSetReplicas(instance); got != 5 {
+	if got := WorkloadReplicas(instance); got != 5 {
 		t.Errorf("expected 5 replicas, got %d", got)
 	}
 	instance.Spec.Suspended = true
-	if got := StatefulSetReplicas(instance); got != 0 {
+	if got := WorkloadReplicas(instance); got != 0 {
 		t.Errorf("expected 0 replicas when suspended, got %d", got)
 	}
 }

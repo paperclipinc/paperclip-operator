@@ -18,13 +18,18 @@ package controller
 
 import (
 	"context"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +37,31 @@ import (
 	paperclipv1alpha1 "github.com/paperclipinc/paperclip-operator/api/v1alpha1"
 	"github.com/paperclipinc/paperclip-operator/internal/resources"
 )
+
+// reconcileN reconciles the instance n times. The first reconcile of a fresh
+// Instance only adds the finalizer and requeues, so tests reconcile at least
+// twice before asserting on built resources.
+func reconcileN(ctx context.Context, r *InstanceReconciler, nn types.NamespacedName, n int) {
+	for i := 0; i < n; i++ {
+		_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+		ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	}
+}
+
+// recordedEvent drains the fake recorder and reports whether any event
+// contains the given substring.
+func recordedEvent(rec *record.FakeRecorder, substr string) bool {
+	for {
+		select {
+		case e := <-rec.Events:
+			if strings.Contains(e, substr) {
+				return true
+			}
+		default:
+			return false
+		}
+	}
+}
 
 var _ = Describe("Instance Controller", func() {
 	Context("When reconciling a resource", func() {
@@ -138,6 +168,304 @@ var _ = Describe("Instance Controller", func() {
 			cond := meta.FindStatusCondition(updated.Status.Conditions, ConditionSuspended)
 			Expect(cond).NotTo(BeNil())
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+	})
+
+	Context("When selecting the server workload kind", func() {
+		ctx := context.Background()
+
+		cleanup := func(nn types.NamespacedName) {
+			resource := &paperclipv1alpha1.Instance{}
+			if err := k8sClient.Get(ctx, nn, resource); err == nil {
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+				// Run the finalizer so the object is actually removed.
+				r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+				_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+			}
+		}
+
+		It("builds a Deployment (and no StatefulSet) for auto workload without persistence, and points the HPA at it", func() {
+			nn := types.NamespacedName{Name: "auto-workload", Namespace: "default"}
+			defer cleanup(nn)
+
+			By("creating an auto-workload Instance with an external database and HPA enabled")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:    paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Workload: "auto",
+					Database: paperclipv1alpha1.DatabaseSpec{
+						Mode:        "external",
+						ExternalURL: "postgres://user:pass@db.example.com:5432/paperclip",
+					},
+					Availability: paperclipv1alpha1.AvailabilitySpec{
+						AutoScaling: &paperclipv1alpha1.AutoScalingSpec{Enabled: true, MaxReplicas: 3},
+					},
+					Storage: paperclipv1alpha1.StorageSpec{
+						Persistence: paperclipv1alpha1.PersistenceSpec{Enabled: resources.Ptr(false)},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			By("verifying a Deployment exists and no StatefulSet")
+			deploy := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy)).To(Succeed())
+			sts := &appsv1.StatefulSet{}
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, nn, sts))).To(BeTrue())
+
+			By("verifying the HPA targets the Deployment")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			hpa := &autoscalingv2.HorizontalPodAutoscaler{}
+			hpaNN := types.NamespacedName{Name: resources.HPAName(updated), Namespace: nn.Namespace}
+			Expect(k8sClient.Get(ctx, hpaNN, hpa)).To(Succeed())
+			Expect(hpa.Spec.ScaleTargetRef.Kind).To(Equal("Deployment"))
+			Expect(hpa.Spec.ScaleTargetRef.Name).To(Equal(nn.Name))
+
+			By("verifying the workload profile is reported valid")
+			cond := meta.FindStatusCondition(updated.Status.Conditions, ConditionWorkloadProfileValid)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+
+		It("keeps building a StatefulSet for a default instance (regression)", func() {
+			nn := types.NamespacedName{Name: "default-workload", Namespace: "default"}
+			defer cleanup(nn)
+
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image: paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			sts := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, nn, sts)).To(Succeed())
+			deploy := &appsv1.Deployment{}
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, nn, deploy))).To(BeTrue())
+		})
+
+		It("migrates the workload kind when spec.workload flips StatefulSet -> Deployment", func() {
+			nn := types.NamespacedName{Name: "flip-workload", Namespace: "default"}
+			defer cleanup(nn)
+
+			By("creating a StatefulSet-workload Instance without persistence")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:    paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Workload: "StatefulSet",
+					Database: paperclipv1alpha1.DatabaseSpec{
+						Mode:        "external",
+						ExternalURL: "postgres://user:pass@db.example.com:5432/paperclip",
+					},
+					Storage: paperclipv1alpha1.StorageSpec{
+						Persistence: paperclipv1alpha1.PersistenceSpec{Enabled: resources.Ptr(false)},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			rec := record.NewFakeRecorder(128)
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: rec}
+			reconcileN(ctx, r, nn, 2)
+
+			sts := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, nn, sts)).To(Succeed())
+
+			By("flipping spec.workload to Deployment")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			updated.Spec.Workload = "Deployment"
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			By("verifying the Deployment replaced the StatefulSet")
+			deploy := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy)).To(Succeed())
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, nn, sts))).To(BeTrue())
+			Expect(recordedEvent(rec, "WorkloadKindMigrated")).To(BeTrue())
+		})
+
+		It("keeps the StatefulSet and reports WorkloadProfileValid=False for workload=Deployment with persistence", func() {
+			nn := types.NamespacedName{Name: "pvc-safety", Namespace: "default"}
+			defer cleanup(nn)
+
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:    paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Workload: "Deployment",
+					// persistence stays at its default (enabled)
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			By("verifying the StatefulSet is still built and no Deployment exists")
+			sts := &appsv1.StatefulSet{}
+			Expect(k8sClient.Get(ctx, nn, sts)).To(Succeed())
+			deploy := &appsv1.Deployment{}
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, nn, deploy))).To(BeTrue())
+
+			By("verifying the WorkloadProfileValid condition")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			cond := meta.FindStatusCondition(updated.Status.Conditions, ConditionWorkloadProfileValid)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("PersistenceRequiresStatefulSet"))
+			Expect(cond.Message).To(ContainSubstring("persistence"))
+		})
+	})
+
+	Context("When using the scale subresource", func() {
+		ctx := context.Background()
+
+		It("round-trips replicas through /scale and reports status.replicas and status.selector", func() {
+			nn := types.NamespacedName{Name: "scale-subresource", Namespace: "default"}
+			defer func() {
+				resource := &paperclipv1alpha1.Instance{}
+				if err := k8sClient.Get(ctx, nn, resource); err == nil {
+					Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+					r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+					_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+				}
+			}()
+
+			By("creating a Deployment-workload Instance")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:    paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Workload: "Deployment",
+					Database: paperclipv1alpha1.DatabaseSpec{
+						Mode:        "external",
+						ExternalURL: "postgres://user:pass@db.example.com:5432/paperclip",
+					},
+					Storage: paperclipv1alpha1.StorageSpec{
+						Persistence: paperclipv1alpha1.PersistenceSpec{Enabled: resources.Ptr(false)},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			By("reading the scale subresource")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			scale := &autoscalingv1.Scale{}
+			Expect(k8sClient.SubResource("scale").Get(ctx, updated, scale)).To(Succeed())
+			Expect(scale.Spec.Replicas).To(Equal(int32(1))) // defaulted spec.availability.replicas
+			wantSelector := metav1.FormatLabelSelector(&metav1.LabelSelector{
+				MatchLabels: resources.SelectorLabels(updated),
+			})
+			Expect(scale.Status.Selector).To(Equal(wantSelector))
+			Expect(updated.Status.Selector).To(Equal(wantSelector))
+
+			By("scaling to 3 replicas through the scale subresource")
+			scale.Spec.Replicas = 3
+			Expect(k8sClient.SubResource("scale").Update(ctx, updated, client.WithSubResourceBody(scale))).To(Succeed())
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Spec.Availability.Replicas).NotTo(BeNil())
+			Expect(*updated.Spec.Availability.Replicas).To(Equal(int32(3)))
+
+			By("verifying the reconciled Deployment picks up the scaled replica count")
+			reconcileN(ctx, r, nn, 1)
+			deploy := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, nn, deploy)).To(Succeed())
+			Expect(deploy.Spec.Replicas).NotTo(BeNil())
+			Expect(*deploy.Spec.Replicas).To(Equal(int32(3)))
+
+			By("verifying status.replicas mirrors the observed workload replicas")
+			// envtest runs no Deployment controller, so simulate its status.
+			deploy.Status.Replicas = 3
+			Expect(k8sClient.Status().Update(ctx, deploy)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Status.Replicas).To(Equal(int32(3)))
+			Expect(updated.Status.ManagedResources.Deployment).To(Equal(nn.Name))
+			Expect(updated.Status.ManagedResources.StatefulSet).To(BeEmpty())
+			Expect(k8sClient.SubResource("scale").Get(ctx, updated, scale)).To(Succeed())
+			Expect(scale.Status.Replicas).To(Equal(int32(3)))
+		})
+	})
+
+	Context("When checking multi-replica preconditions", func() {
+		ctx := context.Background()
+
+		It("tracks the MultiReplicaPreconditions condition across spec changes", func() {
+			nn := types.NamespacedName{Name: "multireplica-preconditions", Namespace: "default"}
+			defer func() {
+				resource := &paperclipv1alpha1.Instance{}
+				if err := k8sClient.Get(ctx, nn, resource); err == nil {
+					Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+					r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+					_, _ = r.Reconcile(ctx, reconcile.Request{NamespacedName: nn})
+				}
+			}()
+
+			By("creating an Instance with replicas=3 and an embedded database")
+			resource := &paperclipv1alpha1.Instance{
+				ObjectMeta: metav1.ObjectMeta{Name: nn.Name, Namespace: nn.Namespace},
+				Spec: paperclipv1alpha1.InstanceSpec{
+					Image:        paperclipv1alpha1.ImageSpec{Tag: "v1.0.0"},
+					Database:     paperclipv1alpha1.DatabaseSpec{Mode: "embedded"},
+					Availability: paperclipv1alpha1.AvailabilitySpec{Replicas: resources.Ptr(int32(3))},
+				},
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			By("verifying MultiReplicaPreconditions=False naming both gaps")
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			cond := meta.FindStatusCondition(updated.Status.Conditions, ConditionMultiReplicaPreconditions)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Message).To(ContainSubstring("embedded"))
+			Expect(cond.Message).To(ContainSubstring("objectStorage"))
+
+			By("switching to an external database with object storage")
+			updated.Spec.Database = paperclipv1alpha1.DatabaseSpec{
+				Mode:        "external",
+				ExternalURL: "postgres://user:pass@db.example.com:5432/paperclip",
+			}
+			updated.Spec.ObjectStorage = &paperclipv1alpha1.ObjectStorageSpec{
+				Provider: "s3",
+				Bucket:   "paperclip-shared",
+			}
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			cond = meta.FindStatusCondition(updated.Status.Conditions, ConditionMultiReplicaPreconditions)
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+
+			By("scaling back to one replica removes the condition")
+			updated.Spec.Availability.Replicas = resources.Ptr(int32(1))
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(meta.FindStatusCondition(updated.Status.Conditions, ConditionMultiReplicaPreconditions)).To(BeNil())
 		})
 	})
 })

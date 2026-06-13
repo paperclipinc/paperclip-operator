@@ -70,7 +70,7 @@ rules:
     verbs: ["get", "create", "delete"]
   # Apps
   - apiGroups: ["apps"]
-    resources: ["statefulsets"]
+    resources: ["deployments", "statefulsets"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Networking
   - apiGroups: ["networking.k8s.io"]

@@ -47,7 +47,7 @@ func newFullBenchInstance() *paperclipv1alpha1.Instance {
 			Database: paperclipv1alpha1.DatabaseSpec{Mode: "managed"},
 			Storage: paperclipv1alpha1.StorageSpec{
 				Persistence: paperclipv1alpha1.PersistenceSpec{
-					Enabled: true,
+					Enabled: Ptr(true),
 					Size:    resource.MustParse("10Gi"),
 				},
 			},
