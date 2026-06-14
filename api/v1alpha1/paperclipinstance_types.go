@@ -53,6 +53,10 @@ type InstanceSpec struct {
 	// +optional
 	ObjectStorage *ObjectStorageSpec `json:"objectStorage,omitempty"`
 
+	// Branding configures optional UI brand theming for the Paperclip product.
+	// +optional
+	Branding *BrandingSpec `json:"branding,omitempty"`
+
 	// Heartbeat configures the agent heartbeat scheduler.
 	// +optional
 	Heartbeat HeartbeatSpec `json:"heartbeat,omitempty"`
@@ -511,6 +515,20 @@ type ObjectStorageSpec struct {
 	// PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE.
 	// +optional
 	ForcePathStyle *bool `json:"forcePathStyle,omitempty"`
+}
+
+// BrandingSpec configures optional UI brand theming. When set, the operator
+// mounts the referenced ConfigMap into the Paperclip container and points the
+// server at it via PAPERCLIP_BRAND_DIR. The server then serves the directory
+// under /branding and loads /branding/brand.css after the bundled stylesheet,
+// so the ConfigMap's brand.css can override the product's CSS variables without
+// rebuilding the image.
+type BrandingSpec struct {
+	// CSSConfigMapRef references a ConfigMap whose keys are mounted as files in
+	// the brand directory. Provide a "brand.css" key for the runtime brand
+	// stylesheet; additional keys (e.g. fonts referenced by relative URL) are
+	// mounted alongside it.
+	CSSConfigMapRef *corev1.LocalObjectReference `json:"cssConfigMapRef,omitempty"`
 }
 
 // HeartbeatSpec configures the agent heartbeat scheduler.

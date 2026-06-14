@@ -282,6 +282,12 @@ func buildEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar {
 		}
 	}
 
+	// Brand theming: point the server at the mounted brand directory so it
+	// serves /branding/brand.css and loads it after the bundled stylesheet.
+	if brandingConfigMapRef(instance) != nil {
+		vars = append(vars, corev1.EnvVar{Name: EnvBrandDir, Value: BrandMountPath})
+	}
+
 	// LLM API keys
 	if instance.Spec.Adapters.APIKeysSecretRef != nil {
 		vars = append(vars, corev1.EnvVar{
@@ -692,15 +698,45 @@ func buildVolumes(instance *paperclipv1alpha1.Instance) []corev1.Volume {
 		})
 	}
 
+	// Optional brand-assets volume: a ConfigMap of brand files (brand.css, ...)
+	// mounted read-only and served by the app under /branding.
+	if ref := brandingConfigMapRef(instance); ref != nil {
+		volumes = append(volumes, corev1.Volume{
+			Name: BrandVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: *ref,
+				},
+			},
+		})
+	}
+
 	return volumes
 }
 
+// brandingConfigMapRef returns the brand ConfigMap reference when branding is
+// configured, or nil. Centralized so the volume, mount, and env wiring stay
+// in sync (mirrors the spec.ObjectStorage != nil gating pattern).
+func brandingConfigMapRef(instance *paperclipv1alpha1.Instance) *corev1.LocalObjectReference {
+	if instance.Spec.Branding == nil {
+		return nil
+	}
+	return instance.Spec.Branding.CSSConfigMapRef
+}
+
 func buildVolumeMounts(instance *paperclipv1alpha1.Instance) []corev1.VolumeMount {
-	mounts := make([]corev1.VolumeMount, 0, 1+len(instance.Spec.ExtraVolumeMounts))
+	mounts := make([]corev1.VolumeMount, 0, 2+len(instance.Spec.ExtraVolumeMounts))
 	mounts = append(mounts, corev1.VolumeMount{
 		Name:      DataVolumeName,
 		MountPath: DataMountPath,
 	})
+	if brandingConfigMapRef(instance) != nil {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      BrandVolumeName,
+			MountPath: BrandMountPath,
+			ReadOnly:  true,
+		})
+	}
 	mounts = append(mounts, instance.Spec.ExtraVolumeMounts...)
 	return mounts
 }
