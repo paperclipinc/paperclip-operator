@@ -1686,3 +1686,51 @@ func TestBuildAdapterRegistryEnvVarOmittedWhenEmpty(t *testing.T) {
 		t.Fatal("PAPERCLIP_ADAPTERS should not be set when registry is empty")
 	}
 }
+
+func TestQuotaEnvVars(t *testing.T) {
+	inst := &paperclipv1alpha1.Instance{
+		ObjectMeta: metav1.ObjectMeta{Name: "x", Namespace: "paperclip-app"},
+		Spec: paperclipv1alpha1.InstanceSpec{
+			Adapters: paperclipv1alpha1.AdaptersSpec{
+				Execution: &paperclipv1alpha1.ExecutionSpec{
+					Mode: "kubernetes",
+					Kubernetes: &paperclipv1alpha1.K8sExecutionSpec{
+						PerTenantQuota: &paperclipv1alpha1.TenantResourceQuota{
+							Pods: "20", RequestsCPU: "10", RequestsMemory: "20Gi", LimitsCPU: "20", LimitsMemory: "40Gi",
+						},
+						PerTenantLimitRange: &paperclipv1alpha1.TenantLimitRange{
+							DefaultCPU: "1", DefaultMemory: "2Gi", DefaultRequestCPU: "250m", DefaultRequestMem: "512Mi", MaxCPU: "4", MaxMemory: "8Gi",
+						},
+					},
+				},
+			},
+		},
+	}
+	got := map[string]string{}
+	for _, e := range buildExecutionEnvVars(inst) {
+		got[e.Name] = e.Value
+	}
+	if got["PAPERCLIP_K8S_QUOTA_PODS"] != "20" {
+		t.Errorf("PODS=%q want 20", got["PAPERCLIP_K8S_QUOTA_PODS"])
+	}
+	if got["PAPERCLIP_K8S_QUOTA_REQUESTS_CPU"] != "10" {
+		t.Errorf("REQ_CPU=%q want 10", got["PAPERCLIP_K8S_QUOTA_REQUESTS_CPU"])
+	}
+	if got["PAPERCLIP_K8S_LIMITRANGE_MAX_CPU"] != "4" {
+		t.Errorf("MAX_CPU=%q want 4", got["PAPERCLIP_K8S_LIMITRANGE_MAX_CPU"])
+	}
+}
+
+func TestQuotaEnvVarsAbsentWhenUnset(t *testing.T) {
+	inst := &paperclipv1alpha1.Instance{
+		ObjectMeta: metav1.ObjectMeta{Name: "x", Namespace: "paperclip-app"},
+		Spec: paperclipv1alpha1.InstanceSpec{
+			Adapters: paperclipv1alpha1.AdaptersSpec{Execution: &paperclipv1alpha1.ExecutionSpec{Mode: "kubernetes"}},
+		},
+	}
+	for _, e := range buildExecutionEnvVars(inst) {
+		if strings.HasPrefix(e.Name, "PAPERCLIP_K8S_QUOTA_") || strings.HasPrefix(e.Name, "PAPERCLIP_K8S_LIMITRANGE_") {
+			t.Errorf("unexpected quota env when unset: %s", e.Name)
+		}
+	}
+}
