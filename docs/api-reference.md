@@ -259,6 +259,27 @@ _Appears in:_
 | `appNative` _[AppNativeBackupSpec](#appnativebackupspec)_ | AppNative configures Paperclip's built-in database backups, written to a<br />local directory under the data PVC. Complementary to the operator's S3<br />CronJob; durable only when spec.storage.persistence is enabled. |  | Optional: \{\} <br /> |
 
 
+#### BrandingSpec
+
+
+
+BrandingSpec configures optional UI brand theming. When set, the operator
+mounts the referenced ConfigMap into the Paperclip container and points the
+server at it via PAPERCLIP_BRAND_DIR. The server then serves the directory
+under /branding and loads /branding/brand.css after the bundled stylesheet,
+so the ConfigMap's brand.css can override the product's CSS variables without
+rebuilding the image.
+
+
+
+_Appears in:_
+- [InstanceSpec](#instancespec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `cssConfigMapRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#localobjectreference-v1-core)_ | CSSConfigMapRef references a ConfigMap whose keys are mounted as files in<br />the brand directory. Provide a "brand.css" key for the runtime brand<br />stylesheet; additional keys (e.g. fonts referenced by relative URL) are<br />mounted alongside it. |  |  |
+
+
 #### CloudSandboxPersistenceSpec
 
 
@@ -589,6 +610,7 @@ _Appears in:_
 | `secrets` _[SecretsSpec](#secretsspec)_ | Secrets configures the Paperclip secrets management system. |  | Optional: \{\} <br /> |
 | `storage` _[StorageSpec](#storagespec)_ | Storage configures persistent storage for the Paperclip data directory. |  | Optional: \{\} <br /> |
 | `objectStorage` _[ObjectStorageSpec](#objectstoragespec)_ | ObjectStorage configures S3-compatible object storage for multi-replica deployments. |  | Optional: \{\} <br /> |
+| `branding` _[BrandingSpec](#brandingspec)_ | Branding configures optional UI brand theming for the Paperclip product. |  | Optional: \{\} <br /> |
 | `heartbeat` _[HeartbeatSpec](#heartbeatspec)_ | Heartbeat configures the agent heartbeat scheduler. |  | Optional: \{\} <br /> |
 | `adapters` _[AdaptersSpec](#adaptersspec)_ | Adapters configures agent runtime adapters. |  | Optional: \{\} <br /> |
 | `connections` _[ConnectionsSpec](#connectionsspec)_ | Connections configures third-party OAuth provider credentials for<br />the Paperclip connections system (GitHub, GitLab, Slack, etc.). |  | Optional: \{\} <br /> |
