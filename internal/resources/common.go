@@ -36,6 +36,13 @@ const (
 	DataVolumeName = "paperclip-data"
 	// DataMountPath is the mount path for the Paperclip data volume.
 	DataMountPath = "/paperclip"
+	// BrandVolumeName is the name of the optional brand-assets volume.
+	BrandVolumeName = "paperclip-branding"
+	// BrandMountPath is the read-only mount path for the brand-assets ConfigMap.
+	// The server serves this directory under /branding (PAPERCLIP_BRAND_DIR).
+	BrandMountPath = "/etc/paperclip/branding"
+	// EnvBrandDir is the environment variable pointing the server at the brand dir.
+	EnvBrandDir = "PAPERCLIP_BRAND_DIR"
 	// DatabaseVolumeName is the name of the PostgreSQL data volume.
 	DatabaseVolumeName = "pgdata"
 	// DatabaseMountPath is the mount path for the PostgreSQL data volume.
