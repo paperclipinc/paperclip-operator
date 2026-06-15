@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.16.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.15.0...v0.16.0) (2026-06-14)
+
+
+### Features
+
+* Deployment workload profile, multi-replica preconditions, scale subresource ([#81](https://github.com/paperclipinc/paperclip-operator/issues/81)) ([a3871bf](https://github.com/paperclipinc/paperclip-operator/commit/a3871bf9b6f88664e8861f6633335e3081b09075))
+* **instance:** optional brand theming via spec.branding.cssConfigMapRef ([e5da3ab](https://github.com/paperclipinc/paperclip-operator/commit/e5da3ab17280d00264341c06b8165f9ef6b8f179))
+* lease-aware scheduler gating, leader visibility, failover e2e ([#82](https://github.com/paperclipinc/paperclip-operator/issues/82)) ([de2005d](https://github.com/paperclipinc/paperclip-operator/commit/de2005dfce731bf0027fc8ac4fc087e6518c7d42))
+
+
+### Bug Fixes
+
+* **bootstrap:** make bootstrap Job reconcile idempotent (no immutable-template churn) ([#85](https://github.com/paperclipinc/paperclip-operator/issues/85)) ([3f1beac](https://github.com/paperclipinc/paperclip-operator/commit/3f1beac818e756dbba0c5f12d9a52f1de7f3b5d6)), closes [#83](https://github.com/paperclipinc/paperclip-operator/issues/83)
+
 ## [0.15.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.14.0...v0.15.0) (2026-06-08)
 
 
