@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/paperclipinc/paperclip-operator/compare/v0.17.1...v0.17.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **operatorhub:** add updateGraph semver-mode to submitted ci.yaml ([#92](https://github.com/paperclipinc/paperclip-operator/issues/92)) ([a609947](https://github.com/paperclipinc/paperclip-operator/commit/a6099474eb4e08668f918e3f05ae5fed8f875456))
+
 ## [0.17.1](https://github.com/paperclipinc/paperclip-operator/compare/v0.17.0...v0.17.1) (2026-06-16)
 
 
