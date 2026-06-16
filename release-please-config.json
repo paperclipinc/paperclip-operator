@@ -26,7 +26,8 @@
           "type": "yaml",
           "path": "charts/paperclip-operator/Chart.yaml",
           "jsonpath": "$.appVersion"
-        }
+        },
+        { "type": "generic", "path": "charts/paperclip-operator/Chart.yaml" }
       ]
     }
   }
