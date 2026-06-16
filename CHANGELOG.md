@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.16.0...v0.17.0) (2026-06-16)
+
+
+### Features
+
+* **chart:** world-class Artifact Hub metadata + cosign chart signing ([#88](https://github.com/paperclipinc/paperclip-operator/issues/88)) ([3a5d624](https://github.com/paperclipinc/paperclip-operator/commit/3a5d624ab96a2e31199be142d4f48c051e0ad030))
+
 ## [0.16.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.15.0...v0.16.0) (2026-06-14)
 
 
