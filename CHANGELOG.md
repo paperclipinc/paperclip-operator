@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.1](https://github.com/paperclipinc/paperclip-operator/compare/v0.17.0...v0.17.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **bundle:** declare com.redhat.openshift.versions for OpenShift cert ([#90](https://github.com/paperclipinc/paperclip-operator/issues/90)) ([48f1ccc](https://github.com/paperclipinc/paperclip-operator/commit/48f1ccca2e53d2c9fa3db063e7842d9e4b290c89))
+* **bundle:** declare com.redhat.openshift.versions=v4.15 for OpenShift cert ([48f1ccc](https://github.com/paperclipinc/paperclip-operator/commit/48f1ccca2e53d2c9fa3db063e7842d9e4b290c89))
+
 ## [0.17.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.16.0...v0.17.0) (2026-06-16)
 
 
