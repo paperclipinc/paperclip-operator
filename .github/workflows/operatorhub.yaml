@@ -88,10 +88,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           # Sync fork with upstream to avoid stale-branch CI failures
-          git fetch upstream main
-          git reset --hard upstream/main
-
-          git checkout -b "${BRANCH}"
+          FORK_OWNER=$(gh api user --jq '.login')
+          # Sync the fork's main server-side (gh repo sync is exempt from the PAT
+          # 'workflow' scope restriction that reset+push would hit).
+          gh repo sync "${FORK_OWNER}/community-operators" --branch main --force
+          git fetch origin main
+          git checkout -B "${BRANCH}" origin/main
 
           # Copy prepared bundle
           mkdir -p operators/paperclip-operator
@@ -224,10 +226,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           # Sync fork with upstream to avoid stale-branch CI failures
-          git fetch upstream main
-          git reset --hard upstream/main
-
-          git checkout -b "${BRANCH}"
+          FORK_OWNER=$(gh api user --jq '.login')
+          # Sync the fork's main server-side (gh repo sync is exempt from the PAT
+          # 'workflow' scope restriction that reset+push would hit).
+          gh repo sync "${FORK_OWNER}/community-operators-prod" --branch main --force
+          git fetch origin main
+          git checkout -B "${BRANCH}" origin/main
 
           # Copy prepared bundle. RedHat uses a different review model, so we do
           # NOT write a ci.yaml here (unlike the k8s community-operators job).

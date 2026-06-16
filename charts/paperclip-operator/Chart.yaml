@@ -14,8 +14,60 @@ keywords:
   - orchestration
   - operator
 home: https://github.com/paperclipinc/paperclip-operator
+icon: https://paperclip.inc/favicon.svg
 sources:
   - https://github.com/paperclipinc/paperclip-operator
 maintainers:
   - name: paperclipinc
     url: https://github.com/paperclipinc
+annotations:
+  artifacthub.io/category: ai-machine-learning
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/operator: 'true'
+  artifacthub.io/operatorCapabilities: Seamless Upgrades
+  artifacthub.io/prerelease: 'false'
+  artifacthub.io/links: |
+    - name: Website
+      url: https://paperclip.inc
+    - name: Documentation
+      url: https://paperclip.inc/docs/operators/paperclip
+    - name: OperatorHub
+      url: https://artifacthub.io/packages/olm/community-operators/paperclip-operator
+    - name: support
+      url: https://github.com/paperclipinc/paperclip-operator/issues
+  artifacthub.io/crds: |
+    - kind: Instance
+      version: v1alpha1
+      name: instances.paperclip.inc
+      displayName: Paperclip Instance
+      description: Represents a managed Paperclip AI agent instance
+    - kind: PaperclipSelfConfig
+      version: v1alpha1
+      name: paperclipselfconfigs.paperclip.inc
+      displayName: Paperclip Self-Config
+      description: A request from an agent to modify its own Instance spec
+    - kind: PaperclipClusterDefaults
+      version: v1alpha1
+      name: paperclipclusterdefaults.paperclip.inc
+      displayName: Paperclip Cluster Defaults
+      description: Cluster-wide default settings applied to Paperclip instances
+  artifacthub.io/crdsExamples: |
+    - apiVersion: paperclip.inc/v1alpha1
+      kind: Instance
+      metadata:
+        name: my-paperclip
+      spec:
+        image:
+          repository: ghcr.io/paperclipai/paperclip
+          tag: "2026.0403"
+        deployment:
+          mode: authenticated
+          exposure: public
+  artifacthub.io/images: |
+    - name: paperclip-operator
+      image: ghcr.io/paperclipinc/paperclip-operator:v0.16.0 # x-release-please-version
+  artifacthub.io/changes: |
+    - kind: added
+      description: World-class Artifact Hub metadata (logo, CRDs, images)
+    - kind: added
+      description: Helm chart OCI artifact is now cosign-signed (keyless)
