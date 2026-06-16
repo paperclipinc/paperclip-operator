@@ -110,6 +110,8 @@ jobs:
           if [ ! -f operators/paperclip-operator/ci.yaml ]; then
           cat > operators/paperclip-operator/ci.yaml <<'CI_YAML'
           ---
+          # opm catalog upgrade graph: order bundles by semver (our CSVs have no explicit `replaces`).
+          updateGraph: semver-mode
           # Authorized reviewers for paperclip-operator PRs.
           # A PR authored by any user listed here gets the `authorized-changes` label
           # applied automatically by framework-automation, which enables the PR to
@@ -233,12 +235,27 @@ jobs:
           git fetch origin main
           git checkout -B "${BRANCH}" origin/main
 
-          # Copy prepared bundle. RedHat uses a different review model, so we do
-          # NOT write a ci.yaml here (unlike the k8s community-operators job).
+          # Copy prepared bundle.
           mkdir -p operators/paperclip-operator
           cp -r ../submission/operators/paperclip-operator/${VERSION} operators/paperclip-operator/${VERSION}
+          # Seed ci.yaml only when the catalog does not already have one. Overwriting
+          # it on every release is a privileged change that withholds the
+          # authorized-changes label and blocks auto-merge.
+          if [ ! -f operators/paperclip-operator/ci.yaml ]; then
+          cat > operators/paperclip-operator/ci.yaml <<'CI_YAML'
+          ---
+          # opm catalog upgrade graph: order bundles by semver (our CSVs have no explicit `replaces`).
+          updateGraph: semver-mode
+          # Authorized reviewers for paperclip-operator PRs.
+          # A PR authored by any user listed here gets the `authorized-changes` label
+          # applied automatically by framework-automation, which enables the PR to
+          # auto-merge once framework checks pass.
+          reviewers:
+            - stubbi
+          CI_YAML
+          fi
 
-          git add "operators/paperclip-operator/${VERSION}"
+          git add "operators/paperclip-operator/${VERSION}" operators/paperclip-operator/ci.yaml
           git commit -s -m "operator paperclip-operator (${VERSION})"
           git push --force origin "${BRANCH}"
 
