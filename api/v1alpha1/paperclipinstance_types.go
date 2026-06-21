@@ -667,6 +667,49 @@ type K8sExecutionSpec struct {
 	// Maps to PAPERCLIP_K8S_NAMESPACE_PREFIX.
 	// +optional
 	NamespacePrefix string `json:"namespacePrefix,omitempty"`
+
+	// PerTenantQuota stamps a ResourceQuota on each per-tenant namespace, bounding total
+	// CPU/memory/pods so one tenant cannot starve the shared sandbox pool. Absent = no quota
+	// (today's behavior). Maps to PAPERCLIP_K8S_QUOTA_* env consumed by the sandbox plugin.
+	// +optional
+	PerTenantQuota *TenantResourceQuota `json:"perTenantQuota,omitempty"`
+
+	// PerTenantLimitRange stamps a LimitRange on each per-tenant namespace (per-container
+	// default + max ceiling). Absent = no LimitRange. Maps to PAPERCLIP_K8S_LIMITRANGE_* env.
+	// +optional
+	PerTenantLimitRange *TenantLimitRange `json:"perTenantLimitRange,omitempty"`
+}
+
+// TenantResourceQuota mirrors the hard limits of a v1 ResourceQuota for a per-tenant
+// namespace. All values are Kubernetes quantity strings.
+type TenantResourceQuota struct {
+	// +kubebuilder:validation:Required
+	Pods string `json:"pods"`
+	// +kubebuilder:validation:Required
+	RequestsCPU string `json:"requestsCpu"`
+	// +kubebuilder:validation:Required
+	RequestsMemory string `json:"requestsMemory"`
+	// +kubebuilder:validation:Required
+	LimitsCPU string `json:"limitsCpu"`
+	// +kubebuilder:validation:Required
+	LimitsMemory string `json:"limitsMemory"`
+}
+
+// TenantLimitRange mirrors a Container-type v1 LimitRange for a per-tenant namespace:
+// per-container default, defaultRequest, and max.
+type TenantLimitRange struct {
+	// +kubebuilder:validation:Required
+	DefaultCPU string `json:"defaultCpu"`
+	// +kubebuilder:validation:Required
+	DefaultMemory string `json:"defaultMemory"`
+	// +kubebuilder:validation:Required
+	DefaultRequestCPU string `json:"defaultRequestCpu"`
+	// +kubebuilder:validation:Required
+	DefaultRequestMem string `json:"defaultRequestMemory"`
+	// +kubebuilder:validation:Required
+	MaxCPU string `json:"maxCpu"`
+	// +kubebuilder:validation:Required
+	MaxMemory string `json:"maxMemory"`
 }
 
 // AdapterRegistryEntry is one declarative agent-harness entry. Mirrors the

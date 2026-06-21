@@ -366,6 +366,54 @@ spec:
                               letting multiple instances share a cluster without namespace collisions.
                               Maps to PAPERCLIP_K8S_NAMESPACE_PREFIX.
                             type: string
+                          perTenantLimitRange:
+                            description: |-
+                              PerTenantLimitRange stamps a LimitRange on each per-tenant namespace (per-container
+                              default + max ceiling). Absent = no LimitRange. Maps to PAPERCLIP_K8S_LIMITRANGE_* env.
+                            properties:
+                              defaultCpu:
+                                type: string
+                              defaultMemory:
+                                type: string
+                              defaultRequestCpu:
+                                type: string
+                              defaultRequestMemory:
+                                type: string
+                              maxCpu:
+                                type: string
+                              maxMemory:
+                                type: string
+                            required:
+                            - defaultCpu
+                            - defaultMemory
+                            - defaultRequestCpu
+                            - defaultRequestMemory
+                            - maxCpu
+                            - maxMemory
+                            type: object
+                          perTenantQuota:
+                            description: |-
+                              PerTenantQuota stamps a ResourceQuota on each per-tenant namespace, bounding total
+                              CPU/memory/pods so one tenant cannot starve the shared sandbox pool. Absent = no quota
+                              (today's behavior). Maps to PAPERCLIP_K8S_QUOTA_* env consumed by the sandbox plugin.
+                            properties:
+                              limitsCpu:
+                                type: string
+                              limitsMemory:
+                                type: string
+                              pods:
+                                type: string
+                              requestsCpu:
+                                type: string
+                              requestsMemory:
+                                type: string
+                            required:
+                            - limitsCpu
+                            - limitsMemory
+                            - pods
+                            - requestsCpu
+                            - requestsMemory
+                            type: object
                           runtimeClassName:
                             description: |-
                               RuntimeClassName is the RuntimeClass applied to agent pods (e.g. "gvisor")

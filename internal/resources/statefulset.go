@@ -656,6 +656,25 @@ func buildExecutionEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar
 	if k.NamespacePrefix != "" {
 		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_K8S_NAMESPACE_PREFIX", Value: k.NamespacePrefix})
 	}
+	if q := k.PerTenantQuota; q != nil {
+		vars = append(vars,
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_QUOTA_PODS", Value: q.Pods},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_QUOTA_REQUESTS_CPU", Value: q.RequestsCPU},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_QUOTA_REQUESTS_MEMORY", Value: q.RequestsMemory},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_QUOTA_LIMITS_CPU", Value: q.LimitsCPU},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_QUOTA_LIMITS_MEMORY", Value: q.LimitsMemory},
+		)
+	}
+	if lr := k.PerTenantLimitRange; lr != nil {
+		vars = append(vars,
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_LIMITRANGE_DEFAULT_CPU", Value: lr.DefaultCPU},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_LIMITRANGE_DEFAULT_MEMORY", Value: lr.DefaultMemory},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_LIMITRANGE_DEFAULT_REQUEST_CPU", Value: lr.DefaultRequestCPU},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_LIMITRANGE_DEFAULT_REQUEST_MEMORY", Value: lr.DefaultRequestMem},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_LIMITRANGE_MAX_CPU", Value: lr.MaxCPU},
+			corev1.EnvVar{Name: "PAPERCLIP_K8S_LIMITRANGE_MAX_MEMORY", Value: lr.MaxMemory},
+		)
+	}
 
 	return vars
 }
