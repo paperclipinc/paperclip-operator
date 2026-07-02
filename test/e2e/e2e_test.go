@@ -356,6 +356,9 @@ spec:
 			Expect(env).NotTo(ContainSubstring("PAPERCLIP_RATE_LIMIT_REDIS_URL"))
 			Expect(env).NotTo(ContainSubstring("PAPERCLIP_MANAGED_"))
 
+			By("asserting the selinux-relabel init container is present (persistence on, seLinuxRelabel unset => legacy behavior)")
+			Expect(stsInitContainerNames(instNS, "e2e-boot")).To(ContainSubstring("selinux-relabel"))
+
 			By("asserting no managed Redis resources were created")
 			_, err := utils.Run(exec.Command("kubectl", "get", "statefulset", "e2e-boot-redis", "-n", instNS))
 			Expect(err).To(HaveOccurred(), "no Redis StatefulSet should exist")
@@ -689,6 +692,15 @@ func stsReady(ns, name string) func(Gomega) {
 func stsEnvNames(ns, name string) string {
 	out, _ := utils.Run(exec.Command("kubectl", "get", "statefulset", name, "-n", ns,
 		"-o", "jsonpath={.spec.template.spec.containers[0].env[*].name}"))
+	return out
+}
+
+// stsInitContainerNames returns the space-separated names of the StatefulSet's
+// init containers, used to assert presence/absence of the selinux-relabel init
+// container.
+func stsInitContainerNames(ns, name string) string {
+	out, _ := utils.Run(exec.Command("kubectl", "get", "statefulset", name, "-n", ns,
+		"-o", "jsonpath={.spec.template.spec.initContainers[*].name}"))
 	return out
 }
 

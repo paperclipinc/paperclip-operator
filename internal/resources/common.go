@@ -120,6 +120,18 @@ func PersistenceEnabled(instance *paperclipv1alpha1.Instance) bool {
 	return *instance.Spec.Storage.Persistence.Enabled
 }
 
+// SELinuxRelabelEnabled resolves spec.security.seLinuxRelabel (*bool, nil =
+// default true). When true (or unset) and persistence is enabled the operator
+// adds the privileged selinux-relabel init container. An explicit false lets
+// operators opt out on clusters where chcon fails permanently (NFS storage or
+// non-SELinux-enforcing nodes).
+func SELinuxRelabelEnabled(instance *paperclipv1alpha1.Instance) bool {
+	if instance.Spec.Security.SELinuxRelabel == nil {
+		return true
+	}
+	return *instance.Spec.Security.SELinuxRelabel
+}
+
 // SchedulerGatingMode resolves spec.heartbeat.schedulerGating to the mode the
 // operator actually applies: "ordinal" or "lease". "auto" currently resolves
 // to "ordinal" (it will flip to "lease" once the minimum supported app version

@@ -6933,6 +6933,27 @@ spec:
                           annotations for the ServiceAccount.
                         type: object
                     type: object
+                  seLinuxRelabel:
+                    default: true
+                    description: |-
+                      SELinuxRelabel controls whether the operator adds a privileged
+                      "selinux-relabel" init container that runs chcon on the data volume when
+                      persistence is enabled. This relabel is required on SELinux-enforcing
+                      nodes so the data directory's MCS categories match the pod's SELinux
+                      level; without it the pod cannot read its own persistent data.
+
+                      It defaults to true to preserve the legacy behavior (the init container is
+                      always added when persistence is enabled). Set it to false on clusters
+                      where the relabel does not apply and would fail permanently, e.g. NFS-
+                      backed storage or nodes that are not SELinux-enforcing (Ubuntu with
+                      AppArmor). On those clusters chcon returns "Operation not supported",
+                      leaving the pod stuck in Init:CrashLoopBackOff.
+
+                      A pointer is required so an explicit `false` survives marshaling: a plain
+                      bool with omitempty is dropped on marshal and the API server re-defaults
+                      it to true on every controller update (same bug class as
+                      PersistenceSpec.Enabled and NetworkPolicySpec.Enabled).
+                    type: boolean
                 type: object
               selfConfigure:
                 description: |-

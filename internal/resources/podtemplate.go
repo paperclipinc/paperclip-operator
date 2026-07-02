@@ -73,7 +73,12 @@ func BuildServerPodTemplate(instance *paperclipv1alpha1.Instance, extraPodAnnota
 	// the pod's SELinux context. Required because Kubernetes may assign MCS
 	// categories to the volume that differ from the pod's level, making
 	// the data inaccessible. Runs as privileged to perform chcon.
-	if PersistenceEnabled(instance) {
+	//
+	// Gated on spec.security.seLinuxRelabel (default true) so operators can opt
+	// out on clusters where chcon fails permanently, e.g. NFS-backed storage or
+	// non-SELinux-enforcing nodes. Leaving it unset preserves the legacy
+	// behavior for existing SELinux-enforcing clusters.
+	if PersistenceEnabled(instance) && SELinuxRelabelEnabled(instance) {
 		seLevel := "s0"
 		if instance.Spec.Security.PodSecurityContext != nil &&
 			instance.Spec.Security.PodSecurityContext.SELinuxOptions != nil &&

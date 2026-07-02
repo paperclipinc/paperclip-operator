@@ -1227,6 +1227,61 @@ func findInitContainer(sts *appsv1.StatefulSet, name string) (*corev1.Container,
 	return nil, -1
 }
 
+func TestBuildStatefulSetSELinuxRelabelOptOut(t *testing.T) {
+	tests := []struct {
+		name          string
+		persistence   *bool
+		seLinuxLabel  *bool
+		wantContainer bool
+	}{
+		{
+			// Legacy behavior preserved: persistence on, field unset => present.
+			name:          "persistence enabled, seLinuxRelabel unset",
+			persistence:   Ptr(true),
+			seLinuxLabel:  nil,
+			wantContainer: true,
+		},
+		{
+			// Explicit opt-out: persistence on, field false => absent.
+			name:          "persistence enabled, seLinuxRelabel false",
+			persistence:   Ptr(true),
+			seLinuxLabel:  Ptr(false),
+			wantContainer: false,
+		},
+		{
+			// Explicit opt-in: persistence on, field true => present.
+			name:          "persistence enabled, seLinuxRelabel true",
+			persistence:   Ptr(true),
+			seLinuxLabel:  Ptr(true),
+			wantContainer: true,
+		},
+		{
+			// No PVC to relabel: persistence off => absent regardless of field.
+			name:          "persistence disabled, seLinuxRelabel unset",
+			persistence:   Ptr(false),
+			seLinuxLabel:  nil,
+			wantContainer: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			instance := newTestInstance("my-paperclip")
+			instance.Spec.Storage.Persistence.Enabled = tt.persistence
+			instance.Spec.Security.SELinuxRelabel = tt.seLinuxLabel
+
+			sts := BuildStatefulSet(instance, nil)
+			c, _ := findInitContainer(sts, "selinux-relabel")
+			if tt.wantContainer && c == nil {
+				t.Fatal("expected selinux-relabel init container to be present")
+			}
+			if !tt.wantContainer && c != nil {
+				t.Fatal("expected selinux-relabel init container to be absent")
+			}
+		})
+	}
+}
+
 func TestBuildStatefulSetNoSeedInstanceAdminWhenNil(t *testing.T) {
 	instance := newTestInstance("my-paperclip")
 	// PlatformAdmin defaults to nil.

@@ -973,6 +973,28 @@ spec:
         drop: [ALL]
 ```
 
+### SELinux Relabel
+
+When persistence is enabled, the operator adds a privileged `selinux-relabel`
+init container that runs `chcon` on the data volume so its MCS categories match
+the pod's SELinux level. On SELinux-enforcing nodes this is required for the pod
+to read its own persistent data.
+
+On clusters where the relabel does not apply -- NFS-backed storage, or nodes
+that are not SELinux-enforcing (for example Ubuntu with AppArmor) -- `chcon`
+fails permanently with `Operation not supported`, leaving the pod stuck in
+`Init:CrashLoopBackOff`. Opt out by setting `seLinuxRelabel: false`:
+
+```yaml
+spec:
+  security:
+    seLinuxRelabel: false   # default: true (init container is added)
+```
+
+The field defaults to `true`, preserving the legacy behavior, so existing
+SELinux-enforcing clusters are unaffected. Setting it to `false` skips the init
+container entirely.
+
 ### RBAC and ServiceAccount
 
 ```yaml
