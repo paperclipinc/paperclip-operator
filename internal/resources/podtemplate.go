@@ -65,6 +65,9 @@ func BuildServerPodTemplate(instance *paperclipv1alpha1.Instance, extraPodAnnota
 	if instance.Spec.Availability.Affinity != nil {
 		podSpec.Affinity = instance.Spec.Availability.Affinity
 	}
+	if instance.Spec.Availability.PriorityClassName != "" {
+		podSpec.PriorityClassName = instance.Spec.Availability.PriorityClassName
+	}
 	if len(instance.Spec.Availability.TopologySpreadConstraints) > 0 {
 		podSpec.TopologySpreadConstraints = instance.Spec.Availability.TopologySpreadConstraints
 	}

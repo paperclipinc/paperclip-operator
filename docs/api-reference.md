@@ -214,6 +214,7 @@ _Appears in:_
 | `nodeSelector` _object (keys:string, values:string)_ | NodeSelector specifies node selection constraints. |  | Optional: \{\} <br /> |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#toleration-v1-core) array_ | Tolerations specifies pod tolerations. |  | Optional: \{\} <br /> |
 | `affinity` _[Affinity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#affinity-v1-core)_ | Affinity specifies pod affinity rules. |  | Optional: \{\} <br /> |
+| `priorityClassName` _string_ | PriorityClassName sets the scheduling PriorityClass on the product pod so<br />it can preempt lower-priority workloads instead of sitting Pending when the<br />node pool is full. Leave empty for the cluster default priority. |  | Optional: \{\} <br /> |
 | `topologySpreadConstraints` _[TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#topologyspreadconstraint-v1-core) array_ | TopologySpreadConstraints specifies topology spread constraints. |  | Optional: \{\} <br /> |
 
 
@@ -657,6 +658,8 @@ _Appears in:_
 | `egressAllowFQDNs` _string array_ | EgressAllowFQDNs is the list of fully-qualified domain names tenant agent<br />pods may reach (e.g. the LLM gateway and required APIs). Enforced exactly<br />only under EgressMode "cilium". Maps to PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS<br />(comma-separated). |  | Optional: \{\} <br /> |
 | `egressAllowCIDRs` _string array_ | EgressAllowCIDRs is the list of CIDR blocks tenant agent pods may reach, in<br />addition to (or as the standard-mode substitute for) the FQDN allow-list.<br />Maps to PAPERCLIP_K8S_EGRESS_ALLOW_CIDRS (comma-separated). |  | Optional: \{\} <br /> |
 | `namespacePrefix` _string_ | NamespacePrefix is prepended to each derived per-tenant namespace name,<br />letting multiple instances share a cluster without namespace collisions.<br />Maps to PAPERCLIP_K8S_NAMESPACE_PREFIX. |  | Optional: \{\} <br /> |
+| `perTenantQuota` _[TenantResourceQuota](#tenantresourcequota)_ | PerTenantQuota stamps a ResourceQuota on each per-tenant namespace, bounding total<br />CPU/memory/pods so one tenant cannot starve the shared sandbox pool. Absent = no quota<br />(today's behavior). Maps to PAPERCLIP_K8S_QUOTA_* env consumed by the sandbox plugin. |  | Optional: \{\} <br /> |
+| `perTenantLimitRange` _[TenantLimitRange](#tenantlimitrange)_ | PerTenantLimitRange stamps a LimitRange on each per-tenant namespace (per-container<br />default + max ceiling). Absent = no LimitRange. Maps to PAPERCLIP_K8S_LIMITRANGE_* env. |  | Optional: \{\} <br /> |
 
 
 #### LoggingSpec
@@ -1257,5 +1260,48 @@ _Appears in:_
 | `authKey` _[TailscaleAuthKeySpec](#tailscaleauthkeyspec)_ | AuthKey references a Secret containing the Tailscale auth key. The Secret<br />must have a key matching AuthKey.Key (default: "authkey"). Use an<br />ephemeral+reusable key from the Tailscale admin console. |  | Optional: \{\} <br /> |
 | `hostname` _string_ | Hostname sets the Tailscale device name (defaults to the instance name). |  | Optional: \{\} <br /> |
 | `resources` _[ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#resourcerequirements-v1-core)_ | Resources specifies compute resources for the Tailscale sidecar container. |  | Optional: \{\} <br /> |
+
+
+#### TenantLimitRange
+
+
+
+TenantLimitRange mirrors a Container-type v1 LimitRange for a per-tenant namespace:
+per-container default, defaultRequest, and max.
+
+
+
+_Appears in:_
+- [K8sExecutionSpec](#k8sexecutionspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `defaultCpu` _string_ |  |  | Required: \{\} <br /> |
+| `defaultMemory` _string_ |  |  | Required: \{\} <br /> |
+| `defaultRequestCpu` _string_ |  |  | Required: \{\} <br /> |
+| `defaultRequestMemory` _string_ |  |  | Required: \{\} <br /> |
+| `maxCpu` _string_ |  |  | Required: \{\} <br /> |
+| `maxMemory` _string_ |  |  | Required: \{\} <br /> |
+
+
+#### TenantResourceQuota
+
+
+
+TenantResourceQuota mirrors the hard limits of a v1 ResourceQuota for a per-tenant
+namespace. All values are Kubernetes quantity strings.
+
+
+
+_Appears in:_
+- [K8sExecutionSpec](#k8sexecutionspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `pods` _string_ |  |  | Required: \{\} <br /> |
+| `requestsCpu` _string_ |  |  | Required: \{\} <br /> |
+| `requestsMemory` _string_ |  |  | Required: \{\} <br /> |
+| `limitsCpu` _string_ |  |  | Required: \{\} <br /> |
+| `limitsMemory` _string_ |  |  | Required: \{\} <br /> |
 
 
