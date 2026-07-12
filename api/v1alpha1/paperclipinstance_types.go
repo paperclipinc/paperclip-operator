@@ -934,6 +934,27 @@ type SecuritySpec struct {
 	// +optional
 	ContainerSecurityContext *corev1.SecurityContext `json:"containerSecurityContext,omitempty"`
 
+	// SELinuxRelabel controls whether the operator adds a privileged
+	// "selinux-relabel" init container that runs chcon on the data volume when
+	// persistence is enabled. This relabel is required on SELinux-enforcing
+	// nodes so the data directory's MCS categories match the pod's SELinux
+	// level; without it the pod cannot read its own persistent data.
+	//
+	// It defaults to true to preserve the legacy behavior (the init container is
+	// always added when persistence is enabled). Set it to false on clusters
+	// where the relabel does not apply and would fail permanently, e.g. NFS-
+	// backed storage or nodes that are not SELinux-enforcing (Ubuntu with
+	// AppArmor). On those clusters chcon returns "Operation not supported",
+	// leaving the pod stuck in Init:CrashLoopBackOff.
+	//
+	// A pointer is required so an explicit `false` survives marshaling: a plain
+	// bool with omitempty is dropped on marshal and the API server re-defaults
+	// it to true on every controller update (same bug class as
+	// PersistenceSpec.Enabled and NetworkPolicySpec.Enabled).
+	// +kubebuilder:default=true
+	// +optional
+	SELinuxRelabel *bool `json:"seLinuxRelabel,omitempty"`
+
 	// NetworkPolicy configures network isolation.
 	// +optional
 	NetworkPolicy NetworkPolicySpec `json:"networkPolicy,omitempty"`
@@ -1207,6 +1228,12 @@ type AvailabilitySpec struct {
 	// Affinity specifies pod affinity rules.
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
+
+	// PriorityClassName sets the scheduling PriorityClass on the product pod so
+	// it can preempt lower-priority workloads instead of sitting Pending when the
+	// node pool is full. Leave empty for the cluster default priority.
+	// +optional
+	PriorityClassName string `json:"priorityClassName,omitempty"`
 
 	// TopologySpreadConstraints specifies topology spread constraints.
 	// +optional

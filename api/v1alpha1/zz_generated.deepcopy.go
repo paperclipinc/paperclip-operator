@@ -1725,6 +1725,11 @@ func (in *SecuritySpec) DeepCopyInto(out *SecuritySpec) {
 		*out = new(v1.SecurityContext)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.SELinuxRelabel != nil {
+		in, out := &in.SELinuxRelabel, &out.SELinuxRelabel
+		*out = new(bool)
+		**out = **in
+	}
 	in.NetworkPolicy.DeepCopyInto(&out.NetworkPolicy)
 	in.RBAC.DeepCopyInto(&out.RBAC)
 }
