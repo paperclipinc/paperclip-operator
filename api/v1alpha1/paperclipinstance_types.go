@@ -1229,6 +1229,12 @@ type AvailabilitySpec struct {
 	// +optional
 	Affinity *corev1.Affinity `json:"affinity,omitempty"`
 
+	// PriorityClassName sets the scheduling PriorityClass on the product pod so
+	// it can preempt lower-priority workloads instead of sitting Pending when the
+	// node pool is full. Leave empty for the cluster default priority.
+	// +optional
+	PriorityClassName string `json:"priorityClassName,omitempty"`
+
 	// TopologySpreadConstraints specifies topology spread constraints.
 	// +optional
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`

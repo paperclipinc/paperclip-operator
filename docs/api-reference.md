@@ -214,6 +214,7 @@ _Appears in:_
 | `nodeSelector` _object (keys:string, values:string)_ | NodeSelector specifies node selection constraints. |  | Optional: \{\} <br /> |
 | `tolerations` _[Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#toleration-v1-core) array_ | Tolerations specifies pod tolerations. |  | Optional: \{\} <br /> |
 | `affinity` _[Affinity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#affinity-v1-core)_ | Affinity specifies pod affinity rules. |  | Optional: \{\} <br /> |
+| `priorityClassName` _string_ | PriorityClassName sets the scheduling PriorityClass on the product pod so<br />it can preempt lower-priority workloads instead of sitting Pending when the<br />node pool is full. Leave empty for the cluster default priority. |  | Optional: \{\} <br /> |
 | `topologySpreadConstraints` _[TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#topologyspreadconstraint-v1-core) array_ | TopologySpreadConstraints specifies topology spread constraints. |  | Optional: \{\} <br /> |
 
 

@@ -1628,6 +1628,12 @@ spec:
                     required:
                     - enabled
                     type: object
+                  priorityClassName:
+                    description: |-
+                      PriorityClassName sets the scheduling PriorityClass on the product pod so
+                      it can preempt lower-priority workloads instead of sitting Pending when the
+                      node pool is full. Leave empty for the cluster default priority.
+                    type: string
                   replicas:
                     default: 1
                     description: |-
