@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.18.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.17.2...v0.18.0) (2026-07-12)
+
+
+### Features
+
+* **crd:** perTenantQuota/perTenantLimitRange on K8sExecutionSpec ([#94](https://github.com/paperclipinc/paperclip-operator/issues/94)) ([f21a965](https://github.com/paperclipinc/paperclip-operator/commit/f21a9653b69a267ba8ee508227fc96a991d6b3c5))
+* **instance:** add priorityClassName for the product pod (outage guard) ([#100](https://github.com/paperclipinc/paperclip-operator/issues/100)) ([0528728](https://github.com/paperclipinc/paperclip-operator/commit/05287287f9b446175cb38982a1ec03d2c667f1a5))
+
+
+### Bug Fixes
+
+* add spec.security.seLinuxRelabel opt-out for relabel init container ([#98](https://github.com/paperclipinc/paperclip-operator/issues/98)) ([d91ccb0](https://github.com/paperclipinc/paperclip-operator/commit/d91ccb0f673f6e66f8091b253e53cd792d486dc1))
+
 ## [0.17.2](https://github.com/paperclipinc/paperclip-operator/compare/v0.17.1...v0.17.2) (2026-06-16)
 
 
