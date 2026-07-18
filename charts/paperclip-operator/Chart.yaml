@@ -4,8 +4,8 @@ description: >-
   Kubernetes operator for managing Paperclip instances - the open-source AI
   agent orchestration platform
 type: application
-version: 0.18.0
-appVersion: 0.18.0
+version: 0.18.1
+appVersion: 0.18.1
 kubeVersion: '>=1.28.0-0'
 keywords:
   - paperclip
@@ -65,7 +65,7 @@ annotations:
           exposure: public
   artifacthub.io/images: |
     - name: paperclip-operator
-      image: ghcr.io/paperclipinc/paperclip-operator:v0.18.0 # x-release-please-version
+      image: ghcr.io/paperclipinc/paperclip-operator:v0.18.1 # x-release-please-version
   artifacthub.io/changes: |
     - kind: added
       description: World-class Artifact Hub metadata (logo, CRDs, images)
