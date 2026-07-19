@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/paperclipinc/paperclip-operator/compare/v0.18.0...v0.18.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **chart:** allow kubeVersion pre-release suffixes from managed providers ([#102](https://github.com/paperclipinc/paperclip-operator/issues/102)) ([cb60cc4](https://github.com/paperclipinc/paperclip-operator/commit/cb60cc46e55923995ca71e8f1f287ffb8e81b3fe)), closes [#101](https://github.com/paperclipinc/paperclip-operator/issues/101)
+
 ## [0.18.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.17.2...v0.18.0) (2026-07-12)
 
 
