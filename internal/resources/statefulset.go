@@ -61,6 +61,13 @@ func buildMainContainer(instance *paperclipv1alpha1.Instance) corev1.Container {
 		VolumeMounts:             buildVolumeMounts(instance),
 	}
 
+	// Graceful shutdown: a preStop hook deregisters the terminating pod from the
+	// Service before SIGTERM is delivered, and the pod's (deliberately high)
+	// terminationGracePeriodSeconds gives the server room to shut down without a
+	// rollout SIGKILLing in-flight agent runs. Gated on spec.availability.serverDrain
+	// (default enabled); nil when disabled or the resolved timeout is zero.
+	container.Lifecycle = buildServerLifecycle(instance)
+
 	// Container security context
 	container.SecurityContext = paperclipContainerSecurityContext(instance)
 	if container.SecurityContext.ReadOnlyRootFilesystem == nil {

@@ -525,6 +525,135 @@ func TestBuildPDB(t *testing.T) {
 	}
 }
 
+func TestServerTerminationGracePeriodDefault(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	// Unset → high default so a rollout never SIGKILLs an in-flight agent run.
+	sts := BuildStatefulSet(instance, nil)
+	grace := sts.Spec.Template.Spec.TerminationGracePeriodSeconds
+	if grace == nil {
+		t.Fatal("expected terminationGracePeriodSeconds to be set")
+	}
+	if *grace != DefaultServerTerminationGracePeriodSeconds {
+		t.Errorf("expected default grace %d, got %d", DefaultServerTerminationGracePeriodSeconds, *grace)
+	}
+	if *grace != 1800 {
+		t.Errorf("expected the documented 30-minute (1800s) default, got %d", *grace)
+	}
+}
+
+func TestServerTerminationGracePeriodConfigured(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	instance.Spec.Availability.TerminationGracePeriodSeconds = Ptr(int64(600))
+	sts := BuildStatefulSet(instance, nil)
+	grace := sts.Spec.Template.Spec.TerminationGracePeriodSeconds
+	if grace == nil || *grace != 600 {
+		t.Fatalf("expected configured grace 600, got %v", grace)
+	}
+}
+
+// serverPreStopSleep extracts the preStop exec command's sleep seconds from the
+// main container, or returns (0, false) when there is no preStop hook.
+func serverPreStopSleep(t *testing.T, container corev1.Container) (string, bool) {
+	t.Helper()
+	if container.Lifecycle == nil || container.Lifecycle.PreStop == nil || container.Lifecycle.PreStop.Exec == nil {
+		return "", false
+	}
+	cmd := container.Lifecycle.PreStop.Exec.Command
+	if len(cmd) != 3 {
+		t.Fatalf("expected preStop exec command of 3 elements, got %v", cmd)
+	}
+	if cmd[0] != "/bin/sh" || cmd[1] != "-c" {
+		t.Fatalf("expected preStop exec via /bin/sh -c, got %v", cmd)
+	}
+	return cmd[2], true
+}
+
+func TestServerDrainPreStopDefault(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	// Default (serverDrain unset) → preStop endpoint-deregistration sleep present.
+	sts := BuildStatefulSet(instance, nil)
+	script, ok := serverPreStopSleep(t, sts.Spec.Template.Spec.Containers[0])
+	if !ok {
+		t.Fatal("expected a default preStop drain hook on the server container")
+	}
+	if script != "sleep 15" {
+		t.Errorf("expected default preStop 'sleep 15', got %q", script)
+	}
+}
+
+func TestServerDrainDisabled(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	instance.Spec.Availability.ServerDrain = &paperclipv1alpha1.ServerDrainSpec{
+		Enabled: Ptr(false),
+	}
+	sts := BuildStatefulSet(instance, nil)
+	if _, ok := serverPreStopSleep(t, sts.Spec.Template.Spec.Containers[0]); ok {
+		t.Error("expected no preStop hook when serverDrain is disabled")
+	}
+}
+
+func TestServerDrainCustomTimeout(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	instance.Spec.Availability.ServerDrain = &paperclipv1alpha1.ServerDrainSpec{
+		TimeoutSeconds: Ptr(int64(45)),
+	}
+	sts := BuildStatefulSet(instance, nil)
+	script, ok := serverPreStopSleep(t, sts.Spec.Template.Spec.Containers[0])
+	if !ok {
+		t.Fatal("expected a preStop drain hook")
+	}
+	if script != "sleep 45" {
+		t.Errorf("expected preStop 'sleep 45', got %q", script)
+	}
+}
+
+func TestServerDrainTimeoutClampedToGrace(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	// A drain timeout >= grace would leave no room for SIGTERM; it must be clamped
+	// to grace-1 so the server always gets at least a second to shut down.
+	instance.Spec.Availability.TerminationGracePeriodSeconds = Ptr(int64(30))
+	instance.Spec.Availability.ServerDrain = &paperclipv1alpha1.ServerDrainSpec{
+		TimeoutSeconds: Ptr(int64(120)),
+	}
+	if got := ServerDrainTimeoutSeconds(instance); got != 29 {
+		t.Errorf("expected drain timeout clamped to 29 (grace-1), got %d", got)
+	}
+	sts := BuildStatefulSet(instance, nil)
+	script, ok := serverPreStopSleep(t, sts.Spec.Template.Spec.Containers[0])
+	if !ok {
+		t.Fatal("expected a preStop drain hook")
+	}
+	if script != "sleep 29" {
+		t.Errorf("expected clamped preStop 'sleep 29', got %q", script)
+	}
+}
+
+func TestServerDrainZeroTimeoutNoHook(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	instance.Spec.Availability.ServerDrain = &paperclipv1alpha1.ServerDrainSpec{
+		TimeoutSeconds: Ptr(int64(0)),
+	}
+	sts := BuildStatefulSet(instance, nil)
+	if _, ok := serverPreStopSleep(t, sts.Spec.Template.Spec.Containers[0]); ok {
+		t.Error("expected no preStop hook when drain timeout resolves to 0")
+	}
+}
+
+func TestDeploymentServerDrainAndGrace(t *testing.T) {
+	// The pod template (grace + preStop) is shared by the Deployment workload path.
+	instance := newTestInstance("my-paperclip")
+	instance.Spec.Storage.Persistence.Enabled = Ptr(false)
+	instance.Spec.Database.Mode = "external"
+	dep := BuildDeployment(instance, nil)
+	grace := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	if grace == nil || *grace != DefaultServerTerminationGracePeriodSeconds {
+		t.Fatalf("expected default grace on Deployment, got %v", grace)
+	}
+	if _, ok := serverPreStopSleep(t, dep.Spec.Template.Spec.Containers[0]); !ok {
+		t.Error("expected default preStop drain hook on the Deployment server container")
+	}
+}
+
 func TestBuildStatefulSetConnectionsEnvVars(t *testing.T) {
 	instance := newTestInstance("my-paperclip")
 	instance.Spec.Connections = &paperclipv1alpha1.ConnectionsSpec{

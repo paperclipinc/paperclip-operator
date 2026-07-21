@@ -25,7 +25,7 @@ func BuildServerPodTemplate(instance *paperclipv1alpha1.Instance, extraPodAnnota
 		RestartPolicy:                 corev1.RestartPolicyAlways,
 		DNSPolicy:                     corev1.DNSClusterFirst,
 		SchedulerName:                 "default-scheduler",
-		TerminationGracePeriodSeconds: Ptr(int64(30)),
+		TerminationGracePeriodSeconds: Ptr(ServerTerminationGracePeriodSeconds(instance)),
 		ServiceAccountName:            ServiceAccountName(instance),
 		ShareProcessNamespace:         shareProcessNamespace(instance),
 	}

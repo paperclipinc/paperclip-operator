@@ -1247,6 +1247,52 @@ type AvailabilitySpec struct {
 	// TopologySpreadConstraints specifies topology spread constraints.
 	// +optional
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
+
+	// TerminationGracePeriodSeconds is the pod termination grace period for the
+	// Paperclip server pod. On shutdown (deploy/rollout/node drain) the kubelet
+	// sends SIGTERM and waits up to this many seconds before SIGKILL. The server
+	// uses this window to let in-flight agent runs finish (soft-drain) instead of
+	// being interrupted mid-run. When unset the operator defaults it high (see
+	// DefaultServerTerminationGracePeriodSeconds) so a rollout never kills an active
+	// run; the previous hardcoded 30s was far shorter than a typical multi-minute
+	// agent run. The grace period is a ceiling, not a fixed wait: the pod terminates
+	// as soon as the server exits, so a high value only delays SIGKILL for pods that
+	// still have work to drain.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
+
+	// ServerDrain configures graceful draining of in-flight agent runs when the
+	// Paperclip server pod is shutting down.
+	// +optional
+	ServerDrain *ServerDrainSpec `json:"serverDrain,omitempty"`
+}
+
+// ServerDrainSpec configures how the Paperclip server pod drains in-flight agent
+// runs on shutdown. The server itself soft-drains on SIGTERM (it stops accepting
+// new work and waits for active runs to finish within the pod's termination grace
+// period). This spec adds an optional container preStop hook that holds the
+// container in the "Terminating" state for a short, bounded window BEFORE SIGTERM
+// is delivered, so the pod's endpoints are deregistered from the Service first.
+// That prevents new requests from being routed to a pod that is about to drain,
+// which would otherwise race the soft-drain.
+type ServerDrainSpec struct {
+	// Enabled controls whether the server container gets a preStop drain hook.
+	// The soft-drain on SIGTERM is a property of the server image and is unaffected
+	// by this toggle; disabling only removes the pre-SIGTERM endpoint-deregistration
+	// delay. Defaults to true.
+	// +kubebuilder:default=true
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// TimeoutSeconds bounds how long the preStop hook sleeps before the kubelet
+	// delivers SIGTERM, giving Endpoints/EndpointSlice controllers time to remove
+	// this pod from the Service so in-flight-only traffic remains. Must be shorter
+	// than terminationGracePeriodSeconds (which also has to cover the SIGTERM
+	// soft-drain that follows). Defaults to DefaultServerDrainTimeoutSeconds.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
 }
 
 // PDBSpec configures a PodDisruptionBudget.

@@ -1,6 +1,8 @@
 package resources
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -62,6 +64,32 @@ const (
 	EnvOAuthCredentials = "PAPERCLIP_OAUTH_CREDENTIALS" // #nosec G101 -- env var name, not a credential //nolint:gosec
 	// EnvOAuthProviders is the environment variable for custom OAuth provider definitions.
 	EnvOAuthProviders = "PAPERCLIP_OAUTH_PROVIDERS"
+
+	// DefaultServerTerminationGracePeriodSeconds is the default pod termination
+	// grace period for the Paperclip server pod when the instance does not set
+	// spec.availability.terminationGracePeriodSeconds. It is deliberately high (30
+	// minutes) so a rollout, node drain, or deploy never SIGKILLs an in-flight
+	// agent run: agent runs are frequently multi-minute (a single autonomous build
+	// runs as one long sandbox exec), and the hosted deployment already allows a
+	// 30-minute run window (PAPERCLIP_HEARTBEAT_REAP_STALE_MS=1800000). Matching
+	// that window here means the grace period is never the limiting factor for a
+	// run finishing across a pod replacement. The grace period is a ceiling, not a
+	// fixed delay -- the kubelet terminates the pod as soon as the server process
+	// exits, so this high value only extends how long a pod that still has work may
+	// keep running before SIGKILL; it does not slow down teardown of an idle pod
+	// whose server exits promptly on SIGTERM.
+	DefaultServerTerminationGracePeriodSeconds int64 = 1800
+
+	// DefaultServerDrainTimeoutSeconds is the default preStop sleep applied to the
+	// server container when spec.availability.serverDrain is enabled (the default).
+	// The preStop hook holds the container briefly BEFORE the kubelet delivers
+	// SIGTERM, which gives the Endpoints/EndpointSlice controllers time to remove
+	// the terminating pod from the Service so no NEW request or scheduler work is
+	// routed to a pod that is about to shut down (the well-known kube-proxy/CNI
+	// endpoint-deregistration race). It is intentionally short so it consumes only
+	// a small slice of the termination grace period, leaving the rest for the
+	// server's own SIGTERM handling.
+	DefaultServerDrainTimeoutSeconds int64 = 15
 )
 
 // Ptr returns a pointer to the given value.
@@ -163,6 +191,83 @@ func ServerPort(instance *paperclipv1alpha1.Instance) int32 {
 		return instance.Spec.Networking.Service.Port
 	}
 	return DefaultPort
+}
+
+// ServerTerminationGracePeriodSeconds resolves the pod termination grace period
+// for the Paperclip server pod: the explicit
+// spec.availability.terminationGracePeriodSeconds when set, otherwise the high
+// default (DefaultServerTerminationGracePeriodSeconds) so a rollout does not
+// SIGKILL in-flight agent runs.
+func ServerTerminationGracePeriodSeconds(instance *paperclipv1alpha1.Instance) int64 {
+	if g := instance.Spec.Availability.TerminationGracePeriodSeconds; g != nil {
+		return *g
+	}
+	return DefaultServerTerminationGracePeriodSeconds
+}
+
+// ServerDrainEnabled reports whether the server container should get the preStop
+// endpoint-deregistration hook. Defaults to true (nil spec, or an explicit
+// serverDrain block with Enabled unset).
+func ServerDrainEnabled(instance *paperclipv1alpha1.Instance) bool {
+	d := instance.Spec.Availability.ServerDrain
+	if d == nil || d.Enabled == nil {
+		return true
+	}
+	return *d.Enabled
+}
+
+// ServerDrainTimeoutSeconds resolves the preStop sleep duration, defaulting to
+// DefaultServerDrainTimeoutSeconds. It is clamped so the preStop can never
+// consume the ENTIRE termination grace period: the kubelet counts the preStop
+// hook against terminationGracePeriodSeconds and then still needs time to deliver
+// SIGTERM and let the server exit, so a preStop as long as (or longer than) the
+// grace would leave zero time for graceful shutdown and force an immediate
+// SIGKILL. We cap it at grace-1 (with a floor of 0) to always leave at least one
+// second for the server's SIGTERM path.
+func ServerDrainTimeoutSeconds(instance *paperclipv1alpha1.Instance) int64 {
+	timeout := DefaultServerDrainTimeoutSeconds
+	if d := instance.Spec.Availability.ServerDrain; d != nil && d.TimeoutSeconds != nil {
+		timeout = *d.TimeoutSeconds
+	}
+	if timeout < 0 {
+		timeout = 0
+	}
+	grace := ServerTerminationGracePeriodSeconds(instance)
+	if max := grace - 1; timeout > max {
+		if max < 0 {
+			max = 0
+		}
+		timeout = max
+	}
+	return timeout
+}
+
+// buildServerLifecycle returns the server container Lifecycle, or nil. When the
+// serverDrain hook is enabled (default) it installs a preStop that sleeps for the
+// resolved drain timeout BEFORE the kubelet delivers SIGTERM. This deregisters
+// the terminating pod from the Service (closing the endpoint-removal race) so new
+// traffic stops before shutdown; the server's own SIGTERM handling then runs
+// within the remaining, deliberately-high, termination grace period.
+//
+// This hook does NOT itself make in-flight agent runs finish -- that requires the
+// server image to soft-drain on SIGTERM. Its job is the traffic-cutover half:
+// keep the pod serving while it is still reachable, then hand off to SIGTERM with
+// the pod already out of rotation.
+func buildServerLifecycle(instance *paperclipv1alpha1.Instance) *corev1.Lifecycle {
+	if !ServerDrainEnabled(instance) {
+		return nil
+	}
+	timeout := ServerDrainTimeoutSeconds(instance)
+	if timeout <= 0 {
+		return nil
+	}
+	return &corev1.Lifecycle{
+		PreStop: &corev1.LifecycleHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep %d", timeout)},
+			},
+		},
+	}
 }
 
 // UseTCPProbes returns true when probes should use TCP instead of HTTP.

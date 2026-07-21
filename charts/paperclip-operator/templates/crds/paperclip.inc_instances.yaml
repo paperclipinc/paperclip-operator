@@ -1661,6 +1661,45 @@ spec:
                     format: int32
                     minimum: 1
                     type: integer
+                  serverDrain:
+                    description: |-
+                      ServerDrain configures graceful draining of in-flight agent runs when the
+                      Paperclip server pod is shutting down.
+                    properties:
+                      enabled:
+                        default: true
+                        description: |-
+                          Enabled controls whether the server container gets a preStop drain hook.
+                          The soft-drain on SIGTERM is a property of the server image and is unaffected
+                          by this toggle; disabling only removes the pre-SIGTERM endpoint-deregistration
+                          delay. Defaults to true.
+                        type: boolean
+                      timeoutSeconds:
+                        description: |-
+                          TimeoutSeconds bounds how long the preStop hook sleeps before the kubelet
+                          delivers SIGTERM, giving Endpoints/EndpointSlice controllers time to remove
+                          this pod from the Service so in-flight-only traffic remains. Must be shorter
+                          than terminationGracePeriodSeconds (which also has to cover the SIGTERM
+                          soft-drain that follows). Defaults to DefaultServerDrainTimeoutSeconds.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                    type: object
+                  terminationGracePeriodSeconds:
+                    description: |-
+                      TerminationGracePeriodSeconds is the pod termination grace period for the
+                      Paperclip server pod. On shutdown (deploy/rollout/node drain) the kubelet
+                      sends SIGTERM and waits up to this many seconds before SIGKILL. The server
+                      uses this window to let in-flight agent runs finish (soft-drain) instead of
+                      being interrupted mid-run. When unset the operator defaults it high (see
+                      DefaultServerTerminationGracePeriodSeconds) so a rollout never kills an active
+                      run; the previous hardcoded 30s was far shorter than a typical multi-minute
+                      agent run. The grace period is a ceiling, not a fixed wait: the pod terminates
+                      as soon as the server exits, so a high value only delays SIGKILL for pods that
+                      still have work to drain.
+                    format: int64
+                    minimum: 0
+                    type: integer
                   tolerations:
                     description: Tolerations specifies pod tolerations.
                     items:
