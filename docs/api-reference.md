@@ -216,6 +216,8 @@ _Appears in:_
 | `affinity` _[Affinity](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#affinity-v1-core)_ | Affinity specifies pod affinity rules. |  | Optional: \{\} <br /> |
 | `priorityClassName` _string_ | PriorityClassName sets the scheduling PriorityClass on the product pod so<br />it can preempt lower-priority workloads instead of sitting Pending when the<br />node pool is full. Leave empty for the cluster default priority. |  | Optional: \{\} <br /> |
 | `topologySpreadConstraints` _[TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.33/#topologyspreadconstraint-v1-core) array_ | TopologySpreadConstraints specifies topology spread constraints. |  | Optional: \{\} <br /> |
+| `terminationGracePeriodSeconds` _integer_ | TerminationGracePeriodSeconds is the pod termination grace period for the<br />Paperclip server pod. On shutdown (deploy/rollout/node drain) the kubelet<br />sends SIGTERM and waits up to this many seconds before SIGKILL. The server<br />uses this window to let in-flight agent runs finish (soft-drain) instead of<br />being interrupted mid-run. When unset the operator defaults it high (see<br />DefaultServerTerminationGracePeriodSeconds) so a rollout never kills an active<br />run; the previous hardcoded 30s was far shorter than a typical multi-minute<br />agent run. The grace period is a ceiling, not a fixed wait: the pod terminates<br />as soon as the server exits, so a high value only delays SIGKILL for pods that<br />still have work to drain. |  | Minimum: 0 <br />Optional: \{\} <br /> |
+| `serverDrain` _[ServerDrainSpec](#serverdrainspec)_ | ServerDrain configures graceful draining of in-flight agent runs when the<br />Paperclip server pod is shutting down. |  | Optional: \{\} <br /> |
 
 
 #### BackupS3Spec
@@ -655,6 +657,7 @@ _Appears in:_
 | `backend` _string_ | Backend selects the per-run workload primitive. "job" runs each agent as a<br />fire-and-forget batch/v1 Job (log-scraped output); "sandbox-cr" creates a<br />long-lived agent-sandbox CR (agents.x-k8s.io) that the server execs into.<br />Maps to PAPERCLIP_K8S_BACKEND. | job | Enum: [job sandbox-cr] <br />Optional: \{\} <br /> |
 | `runtimeClassName` _string_ | RuntimeClassName is the RuntimeClass applied to agent pods (e.g. "gvisor")<br />for an extra kernel-isolation boundary. Maps to<br />PAPERCLIP_K8S_RUNTIME_CLASS_NAME. When set, the execution ClusterRole also<br />grants get/use on the named RuntimeClass. |  | Optional: \{\} <br /> |
 | `egressMode` _string_ | EgressMode selects how per-tenant egress is enforced. "standard" uses plain<br />NetworkPolicy (CIDR-only, cannot match FQDNs); "cilium" uses a<br />CiliumNetworkPolicy for exact FQDN allow-listing (requires the Cilium CNI).<br />Maps to PAPERCLIP_K8S_EGRESS_MODE. |  | Enum: [standard cilium] <br />Optional: \{\} <br /> |
+| `egressPolicy` _string_ | EgressPolicy selects the overall egress posture for tenant sandboxes.<br />"allowlist" (default) restricts egress to EgressAllowFQDNs/EgressAllowCIDRs.<br />"open-internet" allows public internet on ports 80/443 while blocking<br />private ranges, link-local metadata, and CGNAT. | allowlist | Enum: [allowlist open-internet] <br />Optional: \{\} <br /> |
 | `egressAllowFQDNs` _string array_ | EgressAllowFQDNs is the list of fully-qualified domain names tenant agent<br />pods may reach (e.g. the LLM gateway and required APIs). Enforced exactly<br />only under EgressMode "cilium". Maps to PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS<br />(comma-separated). |  | Optional: \{\} <br /> |
 | `egressAllowCIDRs` _string array_ | EgressAllowCIDRs is the list of CIDR blocks tenant agent pods may reach, in<br />addition to (or as the standard-mode substitute for) the FQDN allow-list.<br />Maps to PAPERCLIP_K8S_EGRESS_ALLOW_CIDRS (comma-separated). |  | Optional: \{\} <br /> |
 | `namespacePrefix` _string_ | NamespacePrefix is prepended to each derived per-tenant namespace name,<br />letting multiple instances share a cluster without namespace collisions.<br />Maps to PAPERCLIP_K8S_NAMESPACE_PREFIX. |  | Optional: \{\} <br /> |
@@ -1150,6 +1153,30 @@ _Appears in:_
 | --- | --- | --- | --- |
 | `enabled` _boolean_ | Enabled enables self-configuration for this instance. When true, the<br />agent can create PaperclipSelfConfig resources to modify its own spec. | false | Optional: \{\} <br /> |
 | `allowedActions` _[SelfConfigAction](#selfconfigaction) array_ | AllowedActions restricts which action categories the agent can perform.<br />If empty and enabled is true, no actions are allowed (fail-safe). |  | Enum: [plugins config envVars] <br />MaxItems: 3 <br />Optional: \{\} <br /> |
+
+
+#### ServerDrainSpec
+
+
+
+ServerDrainSpec configures how the Paperclip server pod drains in-flight agent
+runs on shutdown. The server itself soft-drains on SIGTERM (it stops accepting
+new work and waits for active runs to finish within the pod's termination grace
+period). This spec adds an optional container preStop hook that holds the
+container in the "Terminating" state for a short, bounded window BEFORE SIGTERM
+is delivered, so the pod's endpoints are deregistered from the Service first.
+That prevents new requests from being routed to a pod that is about to drain,
+which would otherwise race the soft-drain.
+
+
+
+_Appears in:_
+- [AvailabilitySpec](#availabilityspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `enabled` _boolean_ | Enabled controls whether the server container gets a preStop drain hook.<br />The soft-drain on SIGTERM is a property of the server image and is unaffected<br />by this toggle; disabling only removes the pre-SIGTERM endpoint-deregistration<br />delay. Defaults to true. | true | Optional: \{\} <br /> |
+| `timeoutSeconds` _integer_ | TimeoutSeconds bounds how long the preStop hook sleeps before the kubelet<br />delivers SIGTERM, giving Endpoints/EndpointSlice controllers time to remove<br />this pod from the Service so in-flight-only traffic remains. Must be shorter<br />than terminationGracePeriodSeconds (which also has to cover the SIGTERM<br />soft-drain that follows). Defaults to DefaultServerDrainTimeoutSeconds. |  | Minimum: 0 <br />Optional: \{\} <br /> |
 
 
 #### ServiceMonitorSpec
