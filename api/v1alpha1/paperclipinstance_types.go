@@ -647,6 +647,15 @@ type K8sExecutionSpec struct {
 	// +optional
 	EgressMode string `json:"egressMode,omitempty"`
 
+	// EgressPolicy selects the overall egress posture for tenant sandboxes.
+	// "allowlist" (default) restricts egress to EgressAllowFQDNs/EgressAllowCIDRs.
+	// "open-internet" allows public internet on ports 80/443 while blocking
+	// private ranges, link-local metadata, and CGNAT.
+	// +kubebuilder:default="allowlist"
+	// +kubebuilder:validation:Enum=allowlist;open-internet
+	// +optional
+	EgressPolicy string `json:"egressPolicy,omitempty"`
+
 	// EgressAllowFQDNs is the list of fully-qualified domain names tenant agent
 	// pods may reach (e.g. the LLM gateway and required APIs). Enforced exactly
 	// only under EgressMode "cilium". Maps to PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS

@@ -354,6 +354,17 @@ spec:
                             - standard
                             - cilium
                             type: string
+                          egressPolicy:
+                            default: allowlist
+                            description: |-
+                              EgressPolicy selects the overall egress posture for tenant sandboxes.
+                              "allowlist" (default) restricts egress to EgressAllowFQDNs/EgressAllowCIDRs.
+                              "open-internet" allows public internet on ports 80/443 while blocking
+                              private ranges, link-local metadata, and CGNAT.
+                            enum:
+                            - allowlist
+                            - open-internet
+                            type: string
                           namespacePrefix:
                             description: |-
                               NamespacePrefix is prepended to each derived per-tenant namespace name,

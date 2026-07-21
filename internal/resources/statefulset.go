@@ -641,6 +641,9 @@ func buildExecutionEnvVars(instance *paperclipv1alpha1.Instance) []corev1.EnvVar
 	if k.EgressMode != "" {
 		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_K8S_EGRESS_MODE", Value: k.EgressMode})
 	}
+	if k.EgressPolicy != "" {
+		vars = append(vars, corev1.EnvVar{Name: "PAPERCLIP_K8S_EGRESS_POLICY", Value: k.EgressPolicy})
+	}
 	if len(k.EgressAllowFQDNs) > 0 {
 		vars = append(vars, corev1.EnvVar{
 			Name:  "PAPERCLIP_K8S_EGRESS_ALLOW_FQDNS",
