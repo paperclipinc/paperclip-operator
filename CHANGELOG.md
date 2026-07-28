@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.19.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.18.1...v0.19.0) (2026-07-28)
+
+
+### Features
+
+* **availability:** configurable terminationGracePeriodSeconds + preStop for server drain ([#106](https://github.com/paperclipinc/paperclip-operator/issues/106)) ([c414636](https://github.com/paperclipinc/paperclip-operator/commit/c414636a8c0b6eb449aef9aab67c4f5afa5d3ee4))
+* configurable server termination grace + preStop drain hook ([c414636](https://github.com/paperclipinc/paperclip-operator/commit/c414636a8c0b6eb449aef9aab67c4f5afa5d3ee4))
+* egressPolicy passthrough ([#104](https://github.com/paperclipinc/paperclip-operator/issues/104)) ([d459426](https://github.com/paperclipinc/paperclip-operator/commit/d4594263150368ff9df150586ef84f0b3d20feac))
+* egressPolicy passthrough for tenant sandbox egress posture ([d459426](https://github.com/paperclipinc/paperclip-operator/commit/d4594263150368ff9df150586ef84f0b3d20feac))
+
 ## [0.18.1](https://github.com/paperclipinc/paperclip-operator/compare/v0.18.0...v0.18.1) (2026-07-18)
 
 
