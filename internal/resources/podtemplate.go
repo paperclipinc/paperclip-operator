@@ -39,16 +39,7 @@ func BuildServerPodTemplate(instance *paperclipv1alpha1.Instance, extraPodAnnota
 	}
 
 	// Pod security context
-	if instance.Spec.Security.PodSecurityContext != nil {
-		podSpec.SecurityContext = instance.Spec.Security.PodSecurityContext
-	} else {
-		podSpec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsNonRoot: Ptr(true),
-			RunAsUser:    Ptr(int64(1000)),
-			RunAsGroup:   Ptr(int64(1000)),
-			FSGroup:      Ptr(int64(1000)),
-		}
-	}
+	podSpec.SecurityContext = paperclipPodSecurityContext(instance)
 
 	// Image pull secrets
 	if len(instance.Spec.Image.PullSecrets) > 0 {

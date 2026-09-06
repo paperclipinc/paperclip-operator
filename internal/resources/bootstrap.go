@@ -3,6 +3,7 @@ package resources
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -207,12 +208,14 @@ echo "Admin bootstrap finished successfully."
 					NodeSelector:                 instance.Spec.Availability.NodeSelector,
 					Tolerations:                  instance.Spec.Availability.Tolerations,
 					ImagePullSecrets:             instance.Spec.Image.PullSecrets,
-					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: Ptr(true),
-						RunAsUser:    Ptr(int64(1000)),
-						RunAsGroup:   Ptr(int64(1000)),
-						FSGroup:      Ptr(int64(1000)),
-					},
+					// spec.security.podSecurityContext must reach this Job just
+					// like it reaches the server pod template. Hard-coding the
+					// UID/GID 1000 default here made the Job fail admission
+					// under OpenShift's restricted-v2 SCC, which only admits the
+					// namespace's dynamically allocated UID/GID range, so the
+					// Job never created a pod and the Instance stayed in
+					// Provisioning forever (issue #111).
+					SecurityContext: paperclipPodSecurityContext(instance),
 					Containers: []corev1.Container{
 						{
 							Name:            "bootstrap",
@@ -250,7 +253,8 @@ echo "Admin bootstrap finished successfully."
 	if job.Annotations == nil {
 		job.Annotations = map[string]string{}
 	}
-	job.Annotations[BootstrapHashAnnotation] = bootstrapSpecHash(image, script, admin)
+	job.Annotations[BootstrapHashAnnotation] = bootstrapSpecHash(
+		image, script, admin, job.Spec.Template.Spec.SecurityContext)
 
 	return job
 }
@@ -258,14 +262,31 @@ echo "Admin bootstrap finished successfully."
 // bootstrapSpecHash returns a stable hash over the operator-controlled inputs to
 // the bootstrap Job. It intentionally excludes server-defaulted/mutable fields
 // so a steady-state reconcile produces an identical hash and is a no-op.
-func bootstrapSpecHash(image, script string, admin *paperclipv1alpha1.AdminUserSpec) string {
+func bootstrapSpecHash(
+	image, script string,
+	admin *paperclipv1alpha1.AdminUserSpec,
+	podSecurityContext *corev1.PodSecurityContext,
+) string {
 	// The script already embeds the resolved admin name, service/base URLs and
 	// the JSON sign-up payload, so it captures most config drift. Include the
 	// image, admin email and the password secret reference explicitly so a
 	// change to credentials forces a fresh Job.
-	payload := fmt.Sprintf("image=%s\x00script=%s\x00email=%s\x00secret=%s/%s\x00",
+	//
+	// The pod security context is hashed too: a Job's pod template is immutable,
+	// so without it an Instance whose spec.security.podSecurityContext changes
+	// would keep the stale (and, on OpenShift, unschedulable) Job forever
+	// (issue #111). encoding/json emits struct fields in declaration order, so
+	// this serialization is stable across reconciles.
+	securityContextJSON, err := json.Marshal(podSecurityContext)
+	if err != nil {
+		// PodSecurityContext is a plain API struct and cannot fail to marshal;
+		// fall back to a constant rather than panicking in a builder.
+		securityContextJSON = []byte("unmarshalable")
+	}
+	payload := fmt.Sprintf("image=%s\x00script=%s\x00email=%s\x00secret=%s/%s\x00podSecurityContext=%s\x00",
 		image, script, admin.Email,
-		admin.PasswordSecretRef.Name, admin.PasswordSecretRef.Key)
+		admin.PasswordSecretRef.Name, admin.PasswordSecretRef.Key,
+		securityContextJSON)
 	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:])
 }

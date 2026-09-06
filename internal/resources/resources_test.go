@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -1919,4 +1920,93 @@ func TestQuotaEnvVarsAbsentWhenUnset(t *testing.T) {
 			t.Errorf("unexpected quota env when unset: %s", e.Name)
 		}
 	}
+}
+
+// Regression for issue #111: the bootstrap Job used to hard-code the pod
+// security context (runAsUser/runAsGroup/fsGroup 1000) instead of honoring
+// spec.security.podSecurityContext. On OpenShift, where the restricted-v2 SCC
+// only admits the namespace's dynamically allocated UID/GID range, the Job then
+// failed admission with ".spec.securityContext.fsGroup: Invalid value: 1000",
+// never created a pod, and the Instance stayed in Provisioning.
+func TestBootstrapJobInheritsPodSecurityContext(t *testing.T) {
+	instance := newTestInstance("my-paperclip")
+	instance.Spec.Auth.AdminUser = &paperclipv1alpha1.AdminUserSpec{
+		Email: "admin@test.com",
+		PasswordSecretRef: corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "admin-secret"},
+			Key:                  "password",
+		},
+	}
+
+	t.Run("default", func(t *testing.T) {
+		job := BuildBootstrapJob(instance)
+		psc := job.Spec.Template.Spec.SecurityContext
+		if psc == nil {
+			t.Fatal("expected a pod security context on the bootstrap Job")
+		}
+		if psc.RunAsUser == nil || *psc.RunAsUser != 1000 {
+			t.Errorf("expected default RunAsUser=1000, got %v", psc.RunAsUser)
+		}
+		if psc.RunAsGroup == nil || *psc.RunAsGroup != 1000 {
+			t.Errorf("expected default RunAsGroup=1000, got %v", psc.RunAsGroup)
+		}
+		if psc.FSGroup == nil || *psc.FSGroup != 1000 {
+			t.Errorf("expected default FSGroup=1000, got %v", psc.FSGroup)
+		}
+		if psc.RunAsNonRoot == nil || !*psc.RunAsNonRoot {
+			t.Error("expected default RunAsNonRoot=true")
+		}
+	})
+
+	t.Run("openshift override", func(t *testing.T) {
+		changePolicy := corev1.FSGroupChangeOnRootMismatch
+		override := &corev1.PodSecurityContext{
+			RunAsNonRoot:        Ptr(true),
+			RunAsUser:           Ptr(int64(1000950000)),
+			RunAsGroup:          Ptr(int64(1000950000)),
+			FSGroup:             Ptr(int64(1000950000)),
+			FSGroupChangePolicy: &changePolicy,
+		}
+		withOverride := instance.DeepCopy()
+		withOverride.Spec.Security.PodSecurityContext = override
+
+		job := BuildBootstrapJob(withOverride)
+		psc := job.Spec.Template.Spec.SecurityContext
+		if psc == nil {
+			t.Fatal("expected a pod security context on the bootstrap Job")
+		}
+		if !equality.Semantic.DeepEqual(psc, override) {
+			t.Errorf("bootstrap Job pod security context = %+v, want %+v", psc, override)
+		}
+
+		// The server pod template must resolve to exactly the same thing, so the
+		// two never drift apart again.
+		sts := BuildStatefulSet(withOverride, nil)
+		if !equality.Semantic.DeepEqual(sts.Spec.Template.Spec.SecurityContext, psc) {
+			t.Errorf("bootstrap Job pod security context %+v differs from server pod template %+v",
+				psc, sts.Spec.Template.Spec.SecurityContext)
+		}
+	})
+
+	t.Run("changing the pod security context changes the spec hash", func(t *testing.T) {
+		// A Job's pod template is immutable, so the reconciler replaces the Job
+		// only when this hash changes. Without the pod security context in the
+		// hash, an Instance edited to fix the OpenShift failure would keep the
+		// broken Job forever.
+		base := BuildBootstrapJob(instance)
+		withOverride := instance.DeepCopy()
+		withOverride.Spec.Security.PodSecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: Ptr(int64(1000950000)),
+		}
+		changed := BuildBootstrapJob(withOverride)
+
+		if base.Annotations[BootstrapHashAnnotation] == changed.Annotations[BootstrapHashAnnotation] {
+			t.Error("expected the bootstrap spec hash to change when podSecurityContext changes")
+		}
+		// And it must be stable for an unchanged spec (steady-state no-op).
+		if again := BuildBootstrapJob(instance); again.Annotations[BootstrapHashAnnotation] !=
+			base.Annotations[BootstrapHashAnnotation] {
+			t.Error("bootstrap spec hash is not stable across identical builds")
+		}
+	})
 }
