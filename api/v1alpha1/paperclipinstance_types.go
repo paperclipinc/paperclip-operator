@@ -340,6 +340,11 @@ type AuthSpec struct {
 	// when the instance is first deployed. If not set, the app's first-admin
 	// (board-claim) flow lets the first human to authenticate claim ownership
 	// in authenticated mode.
+	//
+	// The bootstrap it drives is idempotent and runs once: an instance that is
+	// already bootstrapped short-circuits, the operator records completion in
+	// status.bootstrap, and the Job is not re-created. Leaving this field in
+	// place after the first deploy is safe and supported.
 	// +optional
 	AdminUser *AdminUserSpec `json:"adminUser,omitempty"`
 
@@ -1493,6 +1498,10 @@ type InstanceStatus struct {
 	// +optional
 	ManagedResources ManagedResources `json:"managedResources,omitempty"`
 
+	// Bootstrap tracks completion of the one-shot admin bootstrap Job.
+	// +optional
+	Bootstrap *BootstrapStatus `json:"bootstrap,omitempty"`
+
 	// Backup tracks the state of the latest backup operation.
 	// +optional
 	Backup *BackupStatus `json:"backup,omitempty"`
@@ -1550,6 +1559,24 @@ type ManagedResources struct {
 	GrafanaDashboardOperator string `json:"grafanaDashboardOperator,omitempty"`
 	// +optional
 	GrafanaDashboardInstance string `json:"grafanaDashboardInstance,omitempty"`
+}
+
+// BootstrapStatus records that the one-shot admin bootstrap Job
+// (spec.auth.adminUser) has already run to completion. The Job cleans itself up
+// via ttlSecondsAfterFinished, so without this record the operator would
+// re-create it on the next reconcile after every garbage collection, forever.
+type BootstrapStatus struct {
+	// CompletionTime is when the bootstrap Job last completed successfully.
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+	// SpecHash is the content hash of the bootstrap Job that completed. It
+	// matches the paperclip.ai/bootstrap-spec-hash annotation on that Job. The
+	// operator does not re-create the Job while this matches the desired hash;
+	// changing spec.auth.adminUser (or anything else the Job renders from) makes
+	// the hashes differ and bootstrap runs again.
+	// +optional
+	SpecHash string `json:"specHash,omitempty"`
 }
 
 // BackupStatus tracks the state of a backup operation.

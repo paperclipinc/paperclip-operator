@@ -1286,13 +1286,25 @@ func (r *InstanceReconciler) reconcileBootstrapJob(ctx context.Context, instance
 	// BackoffLimitExceeded (issue #83). If the operator-controlled inputs change
 	// we delete and recreate the Job instead, gated on a content-hash so a
 	// steady-state reconcile is a no-op.
+	desiredHash := desired.Annotations[resources.BootstrapHashAnnotation]
+
 	existing := &batchv1.Job{}
 	err := r.Get(ctx, types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, existing)
 	if err == nil {
 		// Job already exists. If its content hash matches the desired spec,
 		// leave it completely alone (do NOT touch spec.template).
-		if existing.Annotations[resources.BootstrapHashAnnotation] ==
-			desired.Annotations[resources.BootstrapHashAnnotation] {
+		if existing.Annotations[resources.BootstrapHashAnnotation] == desiredHash {
+			// Record a successful completion so the Job is not re-created once
+			// its ttlSecondsAfterFinished garbage-collects it (issue #112).
+			if completedAt := jobCompletionTime(existing); completedAt != nil {
+				if instance.Status.Bootstrap == nil ||
+					instance.Status.Bootstrap.SpecHash != desiredHash {
+					instance.Status.Bootstrap = &paperclipv1alpha1.BootstrapStatus{
+						CompletionTime: completedAt,
+						SpecHash:       desiredHash,
+					}
+				}
+			}
 			return nil
 		}
 
@@ -1315,6 +1327,15 @@ func (r *InstanceReconciler) reconcileBootstrapJob(ctx context.Context, instance
 		return fmt.Errorf("checking bootstrap Job: %w", err)
 	}
 
+	// The Job is gone. If bootstrap already completed for this exact
+	// configuration, do not re-create it: the Job removed itself via
+	// ttlSecondsAfterFinished, and re-running it on the next reconcile (and
+	// every hour thereafter) is pure churn against an instance that is already
+	// bootstrapped (issue #112).
+	if b := instance.Status.Bootstrap; b != nil && b.SpecHash == desiredHash {
+		return nil
+	}
+
 	// Job does not exist, create it.
 	if err := controllerutil.SetControllerReference(instance, desired, r.Scheme); err != nil {
 		return fmt.Errorf("setting owner reference on bootstrap Job: %w", err)
@@ -1328,6 +1349,24 @@ func (r *InstanceReconciler) reconcileBootstrapJob(ctx context.Context, instance
 		return fmt.Errorf("creating bootstrap Job: %w", err)
 	}
 
+	return nil
+}
+
+// jobCompletionTime returns when the Job finished successfully, or nil if it has
+// not completed. Jobs created by older controller-managers, and Jobs whose
+// status was written before the API server stamped completionTime, still report
+// the JobComplete condition, so fall back to that condition's transition time.
+func jobCompletionTime(job *batchv1.Job) *metav1.Time {
+	for i := range job.Status.Conditions {
+		c := job.Status.Conditions[i]
+		if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
+			if job.Status.CompletionTime != nil {
+				return job.Status.CompletionTime
+			}
+			t := c.LastTransitionTime
+			return &t
+		}
+	}
 	return nil
 }
 
