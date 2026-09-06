@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.1](https://github.com/paperclipinc/paperclip-operator/compare/v0.19.0...v0.19.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **bootstrap:** honor spec.security.podSecurityContext on the bootstrap Job ([#114](https://github.com/paperclipinc/paperclip-operator/issues/114)) ([f0c582f](https://github.com/paperclipinc/paperclip-operator/commit/f0c582fd8ad09ff2a906ad1f6d0372dc96dac8a1))
+* **bootstrap:** repair the already-bootstrapped short-circuit and stop the Job loop ([#116](https://github.com/paperclipinc/paperclip-operator/issues/116)) ([ff64ac1](https://github.com/paperclipinc/paperclip-operator/commit/ff64ac17badd21a849819c3523f6952a38a5b56c))
+
 ## [0.19.0](https://github.com/paperclipinc/paperclip-operator/compare/v0.18.1...v0.19.0) (2026-07-28)
 
 
