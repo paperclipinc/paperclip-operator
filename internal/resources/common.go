@@ -412,6 +412,29 @@ func SecretsMasterKeySecretName(instance *paperclipv1alpha1.Instance) string {
 	return instance.Name + "-secrets-master-key"
 }
 
+// paperclipPodSecurityContext returns the pod-level security context for pods
+// running the Paperclip image. If the user has provided a custom pod security
+// context via spec.security.podSecurityContext it is used verbatim; otherwise
+// the restricted-PSS-compliant default is returned.
+//
+// Every pod the operator renders from the Paperclip image must go through this
+// helper. Hard-coding the UID/GID 1000 default (as the bootstrap Job used to do)
+// makes the pod unschedulable on OpenShift, where the namespace's dynamically
+// allocated UID/GID range is the only one the restricted-v2 SCC admits, so the
+// Job fails admission with ".spec.securityContext.fsGroup: Invalid value: 1000"
+// and the Instance never leaves Provisioning (issue #111).
+func paperclipPodSecurityContext(instance *paperclipv1alpha1.Instance) *corev1.PodSecurityContext {
+	if instance.Spec.Security.PodSecurityContext != nil {
+		return instance.Spec.Security.PodSecurityContext
+	}
+	return &corev1.PodSecurityContext{
+		RunAsNonRoot: Ptr(true),
+		RunAsUser:    Ptr(int64(1000)),
+		RunAsGroup:   Ptr(int64(1000)),
+		FSGroup:      Ptr(int64(1000)),
+	}
+}
+
 // paperclipContainerSecurityContext returns the security context for containers
 // running the Paperclip image. If the user has provided a custom security context
 // via the CRD, it is used; otherwise the restricted-PSS-compliant default is returned.
