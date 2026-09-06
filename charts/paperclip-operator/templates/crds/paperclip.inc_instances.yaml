@@ -513,6 +513,11 @@ spec:
                       when the instance is first deployed. If not set, the app's first-admin
                       (board-claim) flow lets the first human to authenticate claim ownership
                       in authenticated mode.
+
+                      The bootstrap it drives is idempotent and runs once: an instance that is
+                      already bootstrapped short-circuits, the operator records completion in
+                      status.bootstrap, and the Job is not re-created. Leaving this field in
+                      place after the first deploy is safe and supported.
                     properties:
                       email:
                         description: Email is the admin user's email address (used
@@ -8705,6 +8710,24 @@ spec:
                     description: LastBackupTime is the time of the last successful
                       backup.
                     format: date-time
+                    type: string
+                type: object
+              bootstrap:
+                description: Bootstrap tracks completion of the one-shot admin bootstrap
+                  Job.
+                properties:
+                  completionTime:
+                    description: CompletionTime is when the bootstrap Job last completed
+                      successfully.
+                    format: date-time
+                    type: string
+                  specHash:
+                    description: |-
+                      SpecHash is the content hash of the bootstrap Job that completed. It
+                      matches the paperclip.ai/bootstrap-spec-hash annotation on that Job. The
+                      operator does not re-create the Job while this matches the desired hash;
+                      changing spec.auth.adminUser (or anything else the Job renders from) makes
+                      the hashes differ and bootstrap runs again.
                     type: string
                 type: object
               conditions:

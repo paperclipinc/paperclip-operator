@@ -775,5 +775,85 @@ var _ = Describe("Instance Controller", func() {
 			Expect(k8sClient.Get(ctx, jobNN, recreated)).To(Succeed())
 			Expect(recreated.UID).NotTo(Equal(originalUID), "Job should have been recreated, not patched in place")
 		})
+
+		// Regression for issue #112: the Job cleans itself up via
+		// ttlSecondsAfterFinished, and the reconciler used to re-create it
+		// unconditionally afterwards. On an already-bootstrapped Instance that
+		// meant a new Job every ~65 minutes forever. Recording completion in
+		// status.bootstrap breaks the loop.
+		It("does not re-create the Job after it completed and its TTL removed it", func() {
+			const bootName = "bootstrap-ttl"
+			nn := types.NamespacedName{Name: bootName, Namespace: "default"}
+			jobNN := types.NamespacedName{Name: bootName + "-bootstrap", Namespace: "default"}
+
+			Expect(k8sClient.Create(ctx, newBootstrapInstance(bootName, "admin@test.com"))).To(Succeed())
+			DeferCleanup(func() {
+				resource := &paperclipv1alpha1.Instance{}
+				if err := k8sClient.Get(ctx, nn, resource); err == nil {
+					_ = k8sClient.Delete(ctx, resource)
+				}
+			})
+			r := &InstanceReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+			reconcileN(ctx, r, nn, 2)
+
+			job := &batchv1.Job{}
+			Expect(k8sClient.Get(ctx, jobNN, job)).To(Succeed())
+			jobHash := job.Annotations[resources.BootstrapHashAnnotation]
+			Expect(jobHash).NotTo(BeEmpty())
+
+			By("the Job completing successfully")
+			now := metav1.Now()
+			job.Status.StartTime = &now
+			job.Status.CompletionTime = &now
+			job.Status.Succeeded = 1
+			job.Status.Conditions = []batchv1.JobCondition{
+				{
+					Type:               batchv1.JobSuccessCriteriaMet,
+					Status:             corev1.ConditionTrue,
+					LastTransitionTime: now,
+				},
+				{
+					Type:               batchv1.JobComplete,
+					Status:             corev1.ConditionTrue,
+					LastTransitionTime: now,
+				},
+			}
+			Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+
+			By("the next reconcile recording the completion in status.bootstrap")
+			reconcileN(ctx, r, nn, 1)
+			updated := &paperclipv1alpha1.Instance{}
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			Expect(updated.Status.Bootstrap).NotTo(BeNil())
+			Expect(updated.Status.Bootstrap.SpecHash).To(Equal(jobHash))
+			Expect(updated.Status.Bootstrap.CompletionTime).NotTo(BeNil())
+
+			By("the Job's TTL removing it")
+			Expect(k8sClient.Delete(ctx, job)).To(Succeed())
+			// envtest runs no kube-controller-manager, so nothing clears the
+			// Job's tracking finalizer for us.
+			gone := &batchv1.Job{}
+			if err := k8sClient.Get(ctx, jobNN, gone); err == nil && len(gone.Finalizers) > 0 {
+				gone.Finalizers = nil
+				Expect(k8sClient.Update(ctx, gone)).To(Succeed())
+			}
+			Eventually(func() bool {
+				return errors.IsNotFound(k8sClient.Get(ctx, jobNN, &batchv1.Job{}))
+			}).Should(BeTrue())
+
+			By("further reconciles leaving the Job absent instead of looping forever")
+			reconcileN(ctx, r, nn, 5)
+			Expect(errors.IsNotFound(k8sClient.Get(ctx, jobNN, &batchv1.Job{}))).To(BeTrue(),
+				"bootstrap Job was re-created after a recorded successful completion")
+
+			By("a real config change still runs bootstrap again")
+			Expect(k8sClient.Get(ctx, nn, updated)).To(Succeed())
+			updated.Spec.Auth.AdminUser.Email = "different@test.com"
+			Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+			reconcileN(ctx, r, nn, 1)
+			rerun := &batchv1.Job{}
+			Expect(k8sClient.Get(ctx, jobNN, rerun)).To(Succeed())
+			Expect(rerun.Annotations[resources.BootstrapHashAnnotation]).NotTo(Equal(jobHash))
+		})
 	})
 })

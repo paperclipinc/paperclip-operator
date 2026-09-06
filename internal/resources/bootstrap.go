@@ -123,13 +123,47 @@ else
   fi
 fi
 
-# Step 2: Check if instance is already bootstrapped
-# Use /api/health/details (authenticated) which includes bootstrapStatus;
-# the plain /api/health endpoint does not return this field.
-HEALTH=$(curl -sS -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$SERVER_URL/api/health/details" 2>/dev/null) || true
-if echo "$HEALTH" | grep -q '"bootstrapStatus":"ready"'; then
+# Step 2: Check if instance is already bootstrapped.
+#
+# bootstrapStatus is served by GET /api/health - both the anonymous and the
+# authenticated response shapes carry it. Earlier operator builds probed only
+# /api/health/details, a route that existed briefly on one server fork and
+# 404s on the shipping server, so this short-circuit was unreachable and every
+# already-bootstrapped Instance failed forever (issue #112).
+#
+# Probe each known endpoint in turn and only trust a 2xx response that actually
+# carries the field, so a future rename degrades to "try the next endpoint"
+# instead of silently wedging bootstrap again.
+BOOTSTRAP_READY=""
+BOOTSTRAP_KNOWN=""
+for HEALTH_PATH in /api/health /api/health/details; do
+  HEALTH_CODE=$(curl -sS -o /tmp/health.json -w '%%{http_code}' \
+    -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$SERVER_URL$HEALTH_PATH" 2>/dev/null) || HEALTH_CODE="000"
+  case "$HEALTH_CODE" in
+    2??) ;;
+    *)
+      echo "Health probe $HEALTH_PATH returned HTTP $HEALTH_CODE; trying next endpoint."
+      continue
+      ;;
+  esac
+  if ! grep -q '"bootstrapStatus"' /tmp/health.json 2>/dev/null; then
+    echo "Health probe $HEALTH_PATH does not report bootstrapStatus; trying next endpoint."
+    continue
+  fi
+  BOOTSTRAP_KNOWN="yes"
+  if grep -q '"bootstrapStatus"[[:space:]]*:[[:space:]]*"ready"' /tmp/health.json; then
+    BOOTSTRAP_READY="yes"
+  fi
+  break
+done
+
+if [ -z "$BOOTSTRAP_KNOWN" ]; then
+  echo "No health endpoint reported bootstrapStatus; continuing with bootstrap."
+fi
+
+if [ -n "$BOOTSTRAP_READY" ]; then
   echo "Instance already bootstrapped. Nothing to do."
-  rm -f "$COOKIE_JAR"
+  rm -f "$COOKIE_JAR" /tmp/health.json
   exit 0
 fi
 
@@ -140,6 +174,17 @@ echo "$BOOTSTRAP_OUTPUT"
 
 INVITE_TOKEN=$(echo "$BOOTSTRAP_OUTPUT" | grep -o 'pcp_bootstrap_[a-f0-9]*' | head -1)
 if [ -z "$INVITE_TOKEN" ]; then
+  # bootstrap-ceo refusing because the instance already has an admin user is a
+  # correct idempotent outcome, not a failure: there is nothing left to do. Only
+  # a refusal for any other reason is a real error. This is the second line of
+  # defense behind the health short-circuit above, so a broken or renamed health
+  # endpoint can never again turn a bootstrapped Instance into a Job that fails
+  # forever (issue #112).
+  if echo "$BOOTSTRAP_OUTPUT" | grep -qi 'already has an admin user'; then
+    echo "Instance already has an admin user. Nothing to do."
+    rm -f "$COOKIE_JAR"
+    exit 0
+  fi
   echo "Could not extract invite token."
   rm -f "$COOKIE_JAR"
   exit 1
@@ -172,6 +217,12 @@ echo "Admin bootstrap finished successfully."
 
 	backoffLimit := int32(3)
 	ttl := int32(3600) // Clean up completed job after 1 hour
+	// Hard ceiling on a single bootstrap attempt. The script's own wait loop is
+	// capped at 5 minutes and every step is a short HTTP call or one CLI
+	// invocation, so 30 minutes is far above any healthy run while still
+	// guaranteeing a wedged Job (hung curl, unreachable server) reaches a
+	// terminal state instead of occupying the Instance indefinitely.
+	activeDeadline := int64(1800)
 
 	jobName := BootstrapJobName(instance)
 
@@ -194,6 +245,7 @@ echo "Admin bootstrap finished successfully."
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoffLimit,
 			TTLSecondsAfterFinished: &ttl,
+			ActiveDeadlineSeconds:   &activeDeadline,
 			ManualSelector:          Ptr(true),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{BootstrapJobLabel: jobName},
